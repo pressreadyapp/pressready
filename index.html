@@ -150,12 +150,19 @@ Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. Ret
             body: JSON.stringify({ prompt })
           });
           const data = await response.json();
-          const raw = data.content?.map(b => b.text || "").join("") || "";
+          if (data.error) { setError("API error: " + data.error); return; }
+          const raw = (data.content || []).map(b => b.text || "").join("") || "";
+          if (!raw) { setError("No response received. Please try again."); return; }
           const clean = raw.replace(/```json|```/g, "").trim();
-          try { setParsedPlan(JSON.parse(clean)); setPlan(clean); }
-          catch { setPlan(raw); }
+          try { 
+            const parsed = JSON.parse(clean); 
+            setParsedPlan(parsed); 
+            setPlan(clean); 
+          } catch(e) { 
+            setPlan(raw); 
+          }
         } catch (err) {
-          setError("Connection error. Please try again.");
+          setError("Connection error: " + err.message);
         } finally { setLoading(false); }
       };
 
