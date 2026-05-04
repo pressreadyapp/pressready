@@ -14,7 +14,7 @@ export default async function handler(req, res) {
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-3-5-haiku-20241022',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 1500,
         messages: [{ role: 'user', content: prompt }]
       })
@@ -23,6 +23,6 @@ export default async function handler(req, res) {
     const data = await response.json();
     res.status(200).json(data);
   } catch (error) {
-    res.status(500).json({ error: 'API call failed' });
+    res.status(500).json({ error: error.message });
   }
 }
