@@ -1,0 +1,561 @@
+import { useState, useEffect, useRef } from "react";
+
+const STEPS = [
+  { id: "genre", label: "Genre" },
+  { id: "details", label: "Book Details" },
+  { id: "platform", label: "Platform" },
+  { id: "budget", label: "Budget" },
+  { id: "timeline", label: "Timeline" },
+];
+
+const GENRES = [
+  "Urban Fiction", "Literary Fiction", "Psychological Thriller",
+  "Science Fiction", "Romance", "Mystery", "Fantasy",
+  "Non-Fiction", "Self-Help", "Biography", "Horror", "Historical Fiction"
+];
+
+const PLATFORMS = ["Amazon KDP / Kindle Unlimited", "IngramSpark / Wide", "Both KDP + Wide", "Draft2Digital"];
+
+const BUDGETS = ["$0 – Bootstrap only", "$1–$100", "$101–$500", "$501–$1,000", "$1,000+"];
+
+const TIMELINES = ["2 weeks", "1 month", "2 months", "3 months", "6 months"];
+
+function ProgressBar({ step }) {
+  return (
+    <div style={{ display: "flex", gap: 8, marginBottom: 36 }}>
+      {STEPS.map((s, i) => (
+        <div key={s.id} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+          <div style={{
+            width: "100%", height: 4, borderRadius: 2,
+            background: i <= step ? "#E8C547" : "rgba(255,255,255,0.12)",
+            transition: "background 0.4s"
+          }} />
+          <span style={{
+            fontSize: 10, fontFamily: "'Space Mono', monospace",
+            color: i <= step ? "#E8C547" : "rgba(255,255,255,0.3)",
+            letterSpacing: "0.08em", textTransform: "uppercase",
+            transition: "color 0.4s"
+          }}>{s.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SelectGrid({ options, value, onChange }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10 }}>
+      {options.map(opt => (
+        <button key={opt} onClick={() => onChange(opt)} style={{
+          padding: "12px 14px", borderRadius: 8, border: "1.5px solid",
+          borderColor: value === opt ? "#E8C547" : "rgba(255,255,255,0.15)",
+          background: value === opt ? "rgba(232,197,71,0.12)" : "rgba(255,255,255,0.04)",
+          color: value === opt ? "#E8C547" : "rgba(255,255,255,0.75)",
+          fontFamily: "'Space Mono', monospace", fontSize: 12,
+          cursor: "pointer", textAlign: "left", lineHeight: 1.4,
+          transition: "all 0.2s", letterSpacing: "0.02em"
+        }}>
+          {value === opt && <span style={{ marginRight: 6 }}>✦</span>}{opt}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function TypewriterText({ text, speed = 18 }) {
+  const [displayed, setDisplayed] = useState("");
+  const [done, setDone] = useState(false);
+  const idx = useRef(0);
+
+  useEffect(() => {
+    setDisplayed("");
+    setDone(false);
+    idx.current = 0;
+    const interval = setInterval(() => {
+      if (idx.current < text.length) {
+        setDisplayed(text.slice(0, idx.current + 1));
+        idx.current++;
+      } else {
+        setDone(true);
+        clearInterval(interval);
+      }
+    }, speed);
+    return () => clearInterval(interval);
+  }, [text]);
+
+  return <span>{displayed}{!done && <span style={{ opacity: 0.6, animation: "blink 1s infinite" }}>▋</span>}</span>;
+}
+
+function PlanSection({ title, content, delay = 0 }) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(true), delay);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <div style={{
+      opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(16px)",
+      transition: "all 0.5s ease", marginBottom: 28,
+      borderLeft: "3px solid #E8C547", paddingLeft: 18
+    }}>
+      <div style={{
+        fontFamily: "'Space Mono', monospace", fontSize: 11,
+        color: "#E8C547", letterSpacing: "0.15em",
+        textTransform: "uppercase", marginBottom: 10
+      }}>{title}</div>
+      <div style={{
+        fontFamily: "'Lora', Georgia, serif", fontSize: 15,
+        color: "rgba(255,255,255,0.88)", lineHeight: 1.8,
+        whiteSpace: "pre-wrap"
+      }}>{content}</div>
+    </div>
+  );
+}
+
+function CopyButton({ text }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button onClick={() => {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
+    }} style={{
+      padding: "8px 16px", borderRadius: 6,
+      border: "1.5px solid rgba(232,197,71,0.4)",
+      background: "transparent", color: "#E8C547",
+      fontFamily: "'Space Mono', monospace", fontSize: 11,
+      cursor: "pointer", letterSpacing: "0.08em",
+      transition: "all 0.2s"
+    }}>
+      {copied ? "✓ COPIED" : "COPY PLAN"}
+    </button>
+  );
+}
+
+export default function BookLaunchPlanner() {
+  const [step, setStep] = useState(0);
+  const [form, setForm] = useState({
+    genre: "", title: "", series: "", ku: "", platform: "", budget: "", timeline: "", email: ""
+  });
+  const [loading, setLoading] = useState(false);
+  const [plan, setPlan] = useState(null);
+  const [error, setError] = useState(null);
+  const [parsedPlan, setParsedPlan] = useState(null);
+
+  const update = (key, val) => setForm(f => ({ ...f, [key]: val }));
+
+  const canNext = () => {
+    if (step === 0) return !!form.genre;
+    if (step === 1) return !!form.title;
+    if (step === 2) return !!form.platform;
+    if (step === 3) return !!form.budget;
+    if (step === 4) return !!form.timeline;
+    return true;
+  };
+
+  const generatePlan = async () => {
+    setLoading(true);
+    setError(null);
+    setPlan(null);
+    setParsedPlan(null);
+
+    const prompt = `You are an expert indie publishing strategist with deep knowledge of Amazon KDP, Kindle Unlimited, BookTok, NetGalley, ARC outreach, and book marketing. 
+
+A self-published author needs a complete book launch plan. Here are their details:
+- Genre: ${form.genre}
+- Book Title: ${form.title}
+- Series: ${form.series || "Standalone"}
+- Platform: ${form.platform}
+- Marketing Budget: ${form.budget}
+- Launch Timeline: ${form.timeline}
+
+Generate a comprehensive, actionable launch plan in JSON format with exactly these keys:
+{
+  "executive_summary": "2-3 sentence overview of the strategy",
+  "pre_launch": "Detailed pre-launch checklist and actions (use line breaks with • bullets)",
+  "launch_week": "Specific launch week tactics day by day",
+  "pricing_strategy": "Exact pricing recommendations including any free/discounted periods",
+  "review_strategy": "ARC, NetGalley, BookTok, and reader magnet approach",
+  "social_media": "Platform-specific content calendar and posting strategy",
+  "algorithm_tips": "Platform-specific algorithm triggers and read-through tactics",
+  "email_list": "Email list building strategy tied to this launch",
+  "post_launch": "30/60/90 day post-launch plan",
+  "budget_breakdown": "How to allocate the budget with specific dollar amounts",
+  "kpis": "Key metrics to track and what success looks like at 30/60/90 days",
+  "pro_tip": "One elite-level insider tactic most authors miss"
+}
+
+Be SPECIFIC. No generic advice. Tailor everything to the genre, platform, budget, and timeline provided. Return ONLY valid JSON, no markdown, no explanation.`;
+
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+
+      const data = await response.json();
+      const raw = data.content?.map(b => b.text || "").join("") || "";
+      const clean = raw.replace(/```json|```/g, "").trim();
+
+      try {
+        const parsed = JSON.parse(clean);
+        setParsedPlan(parsed);
+        setPlan(clean);
+      } catch {
+        setPlan(raw);
+      }
+    } catch (err) {
+      setError("Connection error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNext = () => {
+    if (step < STEPS.length - 1) setStep(s => s + 1);
+    else generatePlan();
+  };
+
+  const reset = () => {
+    setStep(0);
+    setForm({ genre: "", title: "", series: "", ku: "", platform: "", budget: "", timeline: "", email: "" });
+    setPlan(null);
+    setParsedPlan(null);
+    setError(null);
+  };
+
+  const planText = parsedPlan ? Object.entries(parsedPlan)
+    .map(([k, v]) => `${k.toUpperCase().replace(/_/g, " ")}\n${v}`)
+    .join("\n\n") : plan || "";
+
+  return (
+    <div style={{
+      minHeight: "100vh", background: "#0D0D0F",
+      backgroundImage: "radial-gradient(ellipse at 20% 20%, rgba(232,197,71,0.06) 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, rgba(180,100,50,0.05) 0%, transparent 60%)",
+      fontFamily: "'Lora', Georgia, serif", padding: "0 16px 60px",
+      display: "flex", flexDirection: "column", alignItems: "center"
+    }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap');
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+        @keyframes fadeUp { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes shimmer { 0%{background-position:200% center} 100%{background-position:-200% center} }
+        * { box-sizing: border-box; }
+        input, textarea { outline: none; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(232,197,71,0.3); border-radius: 2px; }
+      `}</style>
+
+      {/* Header */}
+      <div style={{
+        width: "100%", maxWidth: 680, paddingTop: 48, marginBottom: 48,
+        animation: "fadeUp 0.6s ease both"
+      }}>
+        <div style={{
+          fontFamily: "'Space Mono', monospace", fontSize: 10,
+          color: "#E8C547", letterSpacing: "0.3em", textTransform: "uppercase",
+          marginBottom: 12, opacity: 0.8
+        }}>PressReady · Launch Intelligence</div>
+        <h1 style={{
+          fontSize: "clamp(28px, 5vw, 44px)", fontWeight: 600,
+          color: "#FFFFFF", margin: 0, lineHeight: 1.15,
+          fontFamily: "'Lora', Georgia, serif"
+        }}>Press<span style={{
+          fontStyle: "italic", color: "#E8C547",
+          background: "linear-gradient(90deg, #E8C547, #F0A830, #E8C547)",
+          backgroundSize: "200% auto",
+          WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+          animation: "shimmer 3s linear infinite"
+        }}>Ready</span></h1>
+        <p style={{
+          color: "rgba(255,255,255,0.45)", fontSize: 15, marginTop: 12,
+          fontFamily: "'Space Mono', monospace", letterSpacing: "0.02em", lineHeight: 1.6
+        }}>AI-generated launch strategy tailored to your book, budget & timeline.</p>
+      </div>
+
+      {/* Main Card */}
+      <div style={{
+        width: "100%", maxWidth: 680,
+        background: "rgba(255,255,255,0.03)",
+        border: "1px solid rgba(255,255,255,0.08)",
+        borderRadius: 16, padding: "36px 32px",
+        animation: "fadeUp 0.7s ease 0.1s both",
+        backdropFilter: "blur(12px)"
+      }}>
+
+        {!plan && !loading && (
+          <>
+            <ProgressBar step={step} />
+
+            {step === 0 && (
+              <div style={{ animation: "fadeUp 0.4s ease both" }}>
+                <Label>What genre is your book?</Label>
+                <SelectGrid options={GENRES} value={form.genre} onChange={v => update("genre", v)} />
+              </div>
+            )}
+
+            {step === 1 && (
+              <div style={{ animation: "fadeUp 0.4s ease both" }}>
+                <Label>Book details</Label>
+                <Input
+                  placeholder="Book title *"
+                  value={form.title}
+                  onChange={e => update("title", e.target.value)}
+                />
+                <Input
+                  placeholder="Series name (optional — e.g. 'THB Series Book 4')"
+                  value={form.series}
+                  onChange={e => update("series", e.target.value)}
+                  style={{ marginTop: 12 }}
+                />
+              </div>
+            )}
+
+            {step === 2 && (
+              <div style={{ animation: "fadeUp 0.4s ease both" }}>
+                <Label>Publishing platform</Label>
+                <SelectGrid options={PLATFORMS} value={form.platform} onChange={v => update("platform", v)} />
+              </div>
+            )}
+
+            {step === 3 && (
+              <div style={{ animation: "fadeUp 0.4s ease both" }}>
+                <Label>Marketing budget</Label>
+                <SelectGrid options={BUDGETS} value={form.budget} onChange={v => update("budget", v)} />
+              </div>
+            )}
+
+            {step === 4 && (
+              <div style={{ animation: "fadeUp 0.4s ease both" }}>
+                <Label>Time until launch</Label>
+                <SelectGrid options={TIMELINES} value={form.timeline} onChange={v => update("timeline", v)} />
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 36, alignItems: "center" }}>
+              {step > 0 ? (
+                <button onClick={() => setStep(s => s - 1)} style={{
+                  background: "transparent", border: "none",
+                  color: "rgba(255,255,255,0.4)", fontFamily: "'Space Mono', monospace",
+                  fontSize: 12, cursor: "pointer", letterSpacing: "0.08em",
+                  padding: "10px 0"
+                }}>← BACK</button>
+              ) : <div />}
+
+              <button
+                onClick={handleNext}
+                disabled={!canNext()}
+                style={{
+                  padding: "14px 32px", borderRadius: 8,
+                  background: canNext() ? "#E8C547" : "rgba(255,255,255,0.08)",
+                  color: canNext() ? "#0D0D0F" : "rgba(255,255,255,0.25)",
+                  border: "none", fontFamily: "'Space Mono', monospace",
+                  fontSize: 12, fontWeight: 700, letterSpacing: "0.12em",
+                  cursor: canNext() ? "pointer" : "not-allowed",
+                  transition: "all 0.2s", textTransform: "uppercase"
+                }}
+              >
+                {step === STEPS.length - 1 ? "Generate Plan →" : "Next →"}
+              </button>
+            </div>
+          </>
+        )}
+
+        {loading && (
+          <div style={{ textAlign: "center", padding: "48px 0" }}>
+            <div style={{
+              width: 48, height: 48, borderRadius: "50%",
+              border: "3px solid rgba(232,197,71,0.2)",
+              borderTop: "3px solid #E8C547",
+              margin: "0 auto 24px",
+              animation: "spin 1s linear infinite"
+            }} />
+            <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+            <div style={{
+              fontFamily: "'Space Mono', monospace", fontSize: 12,
+              color: "#E8C547", letterSpacing: "0.15em"
+            }}>
+              <TypewriterText text="BUILDING YOUR LAUNCH STRATEGY..." speed={60} />
+            </div>
+            <div style={{
+              color: "rgba(255,255,255,0.3)", fontSize: 13, marginTop: 12,
+              fontFamily: "'Lora', serif", fontStyle: "italic"
+            }}>Analyzing genre, platform & budget...</div>
+          </div>
+        )}
+
+        {error && (
+          <div style={{ textAlign: "center", padding: "32px 0" }}>
+            <div style={{ color: "#ff6b6b", fontFamily: "'Space Mono', monospace", fontSize: 13 }}>{error}</div>
+            <button onClick={reset} style={{
+              marginTop: 20, padding: "10px 24px", borderRadius: 6,
+              background: "transparent", border: "1.5px solid #E8C547",
+              color: "#E8C547", fontFamily: "'Space Mono', monospace",
+              fontSize: 11, cursor: "pointer", letterSpacing: "0.1em"
+            }}>TRY AGAIN</button>
+          </div>
+        )}
+
+        {(plan || parsedPlan) && !loading && (
+          <div style={{ animation: "fadeUp 0.5s ease both" }}>
+            <div style={{
+              display: "flex", justifyContent: "space-between", alignItems: "flex-start",
+              marginBottom: 32, flexWrap: "wrap", gap: 12
+            }}>
+              <div>
+                <div style={{
+                  fontFamily: "'Space Mono', monospace", fontSize: 10,
+                  color: "#E8C547", letterSpacing: "0.2em", marginBottom: 6
+                }}>LAUNCH PLAN READY</div>
+                <h2 style={{
+                  fontFamily: "'Lora', serif", color: "#fff",
+                  fontSize: 22, margin: 0, fontWeight: 600
+                }}>{form.title}</h2>
+                <div style={{
+                  fontFamily: "'Space Mono', monospace", fontSize: 11,
+                  color: "rgba(255,255,255,0.4)", marginTop: 4
+                }}>{form.genre} · {form.platform} · {form.timeline}</div>
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <CopyButton text={planText} />
+                <button onClick={reset} style={{
+                  padding: "8px 16px", borderRadius: 6,
+                  border: "1.5px solid rgba(255,255,255,0.15)",
+                  background: "transparent", color: "rgba(255,255,255,0.5)",
+                  fontFamily: "'Space Mono', monospace", fontSize: 11,
+                  cursor: "pointer", letterSpacing: "0.08em"
+                }}>NEW PLAN</button>
+              </div>
+            </div>
+
+            <div style={{
+              height: 1, background: "rgba(232,197,71,0.2)", marginBottom: 32
+            }} />
+
+            {parsedPlan ? (
+              <>
+                {parsedPlan.executive_summary && (
+                  <div style={{
+                    background: "rgba(232,197,71,0.08)", border: "1px solid rgba(232,197,71,0.2)",
+                    borderRadius: 10, padding: "18px 20px", marginBottom: 28
+                  }}>
+                    <div style={{
+                      fontFamily: "'Space Mono', monospace", fontSize: 10,
+                      color: "#E8C547", letterSpacing: "0.15em", marginBottom: 8
+                    }}>STRATEGY OVERVIEW</div>
+                    <div style={{
+                      fontFamily: "'Lora', serif", fontSize: 15,
+                      color: "rgba(255,255,255,0.9)", lineHeight: 1.7, fontStyle: "italic"
+                    }}>{parsedPlan.executive_summary}</div>
+                  </div>
+                )}
+
+                {[
+                  ["PRE-LAUNCH CHECKLIST", "pre_launch", 200],
+                  ["LAUNCH WEEK TACTICS", "launch_week", 400],
+                  ["PRICING STRATEGY", "pricing_strategy", 600],
+                  ["REVIEW & ARC STRATEGY", "review_strategy", 800],
+                  ["SOCIAL MEDIA PLAN", "social_media", 1000],
+                  ["ALGORITHM TRIGGERS", "algorithm_tips", 1200],
+                  ["EMAIL LIST BUILDING", "email_list", 1400],
+                  ["POST-LAUNCH PLAN", "post_launch", 1600],
+                  ["BUDGET BREAKDOWN", "budget_breakdown", 1800],
+                  ["SUCCESS METRICS", "kpis", 2000],
+                ].map(([title, key, delay]) =>
+                  parsedPlan[key] ? (
+                    <PlanSection key={key} title={title} content={parsedPlan[key]} delay={delay} />
+                  ) : null
+                )}
+
+                {parsedPlan.pro_tip && (
+                  <div style={{
+                    background: "rgba(232,197,71,0.06)",
+                    border: "1.5px solid rgba(232,197,71,0.35)",
+                    borderRadius: 10, padding: "20px 22px", marginTop: 8
+                  }}>
+                    <div style={{
+                      fontFamily: "'Space Mono', monospace", fontSize: 10,
+                      color: "#E8C547", letterSpacing: "0.15em", marginBottom: 10
+                    }}>✦ ELITE INSIDER TIP</div>
+                    <div style={{
+                      fontFamily: "'Lora', serif", fontSize: 15,
+                      color: "rgba(255,255,255,0.9)", lineHeight: 1.75
+                    }}>{parsedPlan.pro_tip}</div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{
+                fontFamily: "'Lora', serif", fontSize: 15,
+                color: "rgba(255,255,255,0.85)", lineHeight: 1.8,
+                whiteSpace: "pre-wrap"
+              }}>{plan}</div>
+            )}
+
+            <div style={{
+              marginTop: 40, paddingTop: 24,
+              borderTop: "1px solid rgba(255,255,255,0.08)",
+              textAlign: "center"
+            }}>
+              <div style={{
+                fontFamily: "'Space Mono', monospace", fontSize: 10,
+                color: "rgba(255,255,255,0.25)", letterSpacing: "0.15em"
+              }}>POWERED BY PRESSREADY · LAUNCH INTELLIGENCE</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Footer tagline */}
+      {!plan && !loading && (
+        <div style={{
+          marginTop: 32, fontFamily: "'Space Mono', monospace",
+          fontSize: 11, color: "rgba(255,255,255,0.2)",
+          letterSpacing: "0.1em", textAlign: "center",
+          animation: "fadeUp 0.8s ease 0.3s both"
+        }}>
+          Built for indie authors who move different.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Label({ children }) {
+  return (
+    <div style={{
+      fontFamily: "'Space Mono', monospace", fontSize: 11,
+      color: "rgba(255,255,255,0.5)", letterSpacing: "0.15em",
+      textTransform: "uppercase", marginBottom: 16
+    }}>{children}</div>
+  );
+}
+
+function Input({ placeholder, value, onChange, style = {} }) {
+  return (
+    <input
+      placeholder={placeholder}
+      value={value}
+      onChange={onChange}
+      style={{
+        width: "100%", padding: "14px 16px",
+        background: "rgba(255,255,255,0.05)",
+        border: "1.5px solid rgba(255,255,255,0.12)",
+        borderRadius: 8, color: "#fff",
+        fontFamily: "'Lora', Georgia, serif", fontSize: 15,
+        transition: "border-color 0.2s",
+        ...style
+      }}
+      onFocus={e => e.target.style.borderColor = "rgba(232,197,71,0.5)"}
+      onBlur={e => e.target.style.borderColor = "rgba(255,255,255,0.12)"}
+    />
+  );
+}
