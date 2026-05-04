@@ -144,10 +144,10 @@ Generate a comprehensive, actionable launch plan in JSON format with exactly the
 Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. Return ONLY valid JSON, no markdown, no explanation.`;
 
         try {
-          const response = await fetch("https://api.anthropic.com/v1/messages", {
+          const response = await fetch("/api/generate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: [{ role: "user", content: prompt }] })
+            body: JSON.stringify({ prompt })
           });
           const data = await response.json();
           const raw = data.content?.map(b => b.text || "").join("") || "";
