@@ -89,7 +89,7 @@
       return (
         <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(16px)", transition: "all 0.5s ease", marginBottom: 28, borderLeft: "3px solid #E8C547", paddingLeft: 18 }}>
           <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#E8C547", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 10 }}>{title}</div>
-          <div style={{ fontFamily: "'Lora', Georgia, serif", fontSize: 15, color: "rgba(255,255,255,0.88)", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{content}</div>
+          <div style={{ fontFamily: "'Lora', Georgia, serif", fontSize: 15, color: "rgba(255,255,255,0.88)", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{typeof content === 'object' ? JSON.stringify(content, null, 2) : content}</div>
         </div>
       );
     }
@@ -141,7 +141,7 @@ A self-published author needs a complete book launch plan:
 Generate a comprehensive, actionable launch plan in JSON format with exactly these keys:
 {"executive_summary":"2-3 sentence overview","pre_launch":"Detailed pre-launch checklist with bullet points","launch_week":"Specific launch week tactics day by day","pricing_strategy":"Exact pricing recommendations","review_strategy":"ARC, NetGalley, BookTok approach","social_media":"Platform-specific content calendar","algorithm_tips":"Platform-specific algorithm triggers","email_list":"Email list building strategy","post_launch":"30/60/90 day post-launch plan","budget_breakdown":"How to allocate budget with specific amounts","kpis":"Key metrics and success definition","pro_tip":"One elite-level insider tactic most authors miss"}
 
-Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. Return ONLY valid JSON, no markdown, no explanation.`;
+Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMPORTANT: Every value in the JSON must be a plain string with line breaks using \n and bullet points using •. Do NOT use nested objects or arrays. Return ONLY valid JSON, no markdown, no explanation.`;
 
         try {
           const response = await fetch("/api/generate", {
@@ -150,16 +150,15 @@ Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. Ret
             body: JSON.stringify({ prompt })
           });
           const data = await response.json();
-          if (data.error) { setError("API error: " + data.error); return; }
+          if (data.error) { setError("API error: " + JSON.stringify(data.error)); return; }
           const raw = (data.content || []).map(b => b.text || "").join("") || "";
           if (!raw) { setError("No response received. Please try again."); return; }
-          const clean = raw.replace(/```json|```/g, "").trim();
+          const clean = raw.replace(/```json|```/g, "").replace(/^\s*`+|`+\s*$/g, "").trim();
           try { 
             const parsed = JSON.parse(clean); 
             setParsedPlan(parsed); 
-            setPlan(clean); 
           } catch(e) { 
-            setPlan(raw); 
+            setPlan(clean); 
           }
         } catch (err) {
           setError("Connection error: " + err.message);
