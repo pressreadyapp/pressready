@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-export default function App() {
+export default function BookLaunchPlanner() {
   const [step, setStep] = useState(0);
   const [genre, setGenre] = useState('');
   const [title, setTitle] = useState('');
