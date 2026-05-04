@@ -12,7 +12,7 @@ Rules:
 - Match recommendations to the stated budget. If budget is $1-100, do not recommend tools that cost $200/month.
 - Be concrete. Name specific platforms, hashtags, sub-genres, communities, price points, and day-by-day actions.
 - Write in clear professional prose. No marketing fluff. No hedging.
-- Output ONLY valid JSON matching the schema. Do not wrap in markdown code fences. Do not add commentary before or after.`;
+- Output ONLY a valid JSON object. No markdown code fences. No commentary before or after. The very first character of your response must be { and the very last must be }.`;
 
   const userPrompt = `Generate a launch plan for this book:
 
@@ -51,19 +51,47 @@ Return JSON with this exact schema:
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('Anthropic API error:', data);
+      console.error('Anthropic API error:', JSON.stringify(data));
       return res.status(500).json({ error: 'Generation failed', details: data });
     }
 
     const rawText = data.content?.[0]?.text || '';
+    console.log('Raw response from Claude:', rawText.substring(0, 500));
 
-    let plan;
+    let plan = null;
+
     try {
-      const cleaned = rawText.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
-      plan = JSON.parse(cleaned);
-    } catch (parseError) {
-      console.error('Parse error:', parseError, 'Raw text:', rawText);
-      return res.status(500).json({ error: 'Could not parse plan', raw: rawText });
+      plan = JSON.parse(rawText.trim());
+    } catch (e) {}
+
+    if (!plan) {
+      try {
+        const stripped = rawText
+          .replace(/^```json\s*/i, '')
+          .replace(/^```\s*/i, '')
+          .replace(/```\s*$/i, '')
+          .trim();
+        plan = JSON.parse(stripped);
+      } catch (e) {}
+    }
+
+    if (!plan) {
+      try {
+        const firstBrace = rawText.indexOf('{');
+        const lastBrace = rawText.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          const extracted = rawText.substring(firstBrace, lastBrace + 1);
+          plan = JSON.parse(extracted);
+        }
+      } catch (e) {}
+    }
+
+    if (!plan) {
+      console.error('All parse strategies failed. Raw text:', rawText);
+      return res.status(500).json({
+        error: 'Could not parse plan',
+        raw: rawText.substring(0, 1000)
+      });
     }
 
     res.status(200).json({ plan });
