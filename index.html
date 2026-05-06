@@ -5,6 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PressReady · Launch Intelligence</title>
   <meta name="description" content="AI-generated book launch plans built by an indie press with 35 books across 7 pen names. Tailored to your book, budget, and timeline. Free." />
+  <!-- Open Graph -->
+  <meta property="og:title" content="PressReady · Launch Intelligence" />
+  <meta property="og:description" content="Get a full book launch plan in 60 seconds. Built by an indie press with 35 books across 7 pen names. Free, no signup required." />
+  <meta property="og:url" content="https://pressready.ink" />
+  <meta property="og:type" content="website" />
+  <!-- og:image omitted until og-image.png is uploaded to repo root -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="PressReady · Launch Intelligence" />
+  <meta name="twitter:description" content="Get a full book launch plan in 60 seconds. Free, no signup." />
+  <!-- Favicon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='12' fill='%230D0D0F'/><text y='72' x='50' text-anchor='middle' font-size='60' font-family='Georgia,serif' fill='%23E8C547'>P</text></svg>" />
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-QDYVPWPDWD"></script>
   <script>
@@ -29,6 +40,15 @@
     @keyframes glow { 0%,100%{box-shadow:0 0 20px rgba(232,197,71,0.15)} 50%{box-shadow:0 0 40px rgba(232,197,71,0.35)} }
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-thumb { background: rgba(232,197,71,0.3); border-radius: 2px; }
+    @media print {
+      body { background: #fff !important; }
+      .no-print { display: none !important; }
+      .print-plan { color: #000 !important; background: #fff !important; padding: 20px !important; }
+      .print-plan * { color: #000 !important; border-color: #ccc !important; background: transparent !important; }
+    }
+    @media screen {
+      .print-only { display: none !important; }
+    }
   </style>
 </head>
 <body>
@@ -142,7 +162,7 @@
 
     function SelectGrid({ options, value, onChange }) {
       return (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
           {options.map(opt => (
             <button key={opt} onClick={() => onChange(opt)} style={{ padding: "12px 14px", borderRadius: 8, border: "1.5px solid", borderColor: value === opt ? "#E8C547" : "rgba(255,255,255,0.15)", background: value === opt ? "rgba(232,197,71,0.12)" : "rgba(255,255,255,0.04)", color: value === opt ? "#E8C547" : "rgba(255,255,255,0.75)", fontFamily: "'Space Mono', monospace", fontSize: 12, cursor: "pointer", textAlign: "left", lineHeight: 1.4, transition: "all 0.2s" }}>
               {value === opt && <span style={{ marginRight: 6 }}>✦</span>}{opt}
@@ -165,6 +185,25 @@
         return () => clearInterval(interval);
       }, [text]);
       return <span>{displayed}{!done && <span style={{ opacity: 0.6, animation: "blink 1s infinite" }}>▋</span>}</span>;
+    }
+
+    const LOADING_MESSAGES = [
+      "ANALYZING YOUR GENRE...",
+      "BUILDING YOUR LAUNCH TIMELINE...",
+      "CALCULATING BUDGET ALLOCATION...",
+      "MAPPING YOUR PLATFORM STRATEGY...",
+      "FINALIZING YOUR LAUNCH PLAN..."
+    ];
+
+    function RotatingMessage() {
+      const [index, setIndex] = useState(0);
+      useEffect(() => {
+        const interval = setInterval(() => {
+          setIndex(i => (i + 1) % LOADING_MESSAGES.length);
+        }, 4000);
+        return () => clearInterval(interval);
+      }, []);
+      return <TypewriterText key={index} text={LOADING_MESSAGES[index]} />;
     }
 
     function PlanSection({ title, content, delay = 0 }) {
@@ -192,6 +231,59 @@
       );
     }
 
+    function CopyButton({ planText, onCopy }) {
+      const [copied, setCopied] = useState(false);
+      const handleCopy = () => {
+        navigator.clipboard.writeText(planText).then(() => {
+          setCopied(true);
+          if (onCopy) onCopy();
+          setTimeout(() => setCopied(false), 2000);
+        }).catch(() => {
+          // Fallback for non-HTTPS or blocked clipboard
+          const el = document.createElement('textarea');
+          el.value = planText;
+          document.body.appendChild(el);
+          el.select();
+          document.execCommand('copy');
+          document.body.removeChild(el);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        });
+      };
+      return (
+        <button onClick={handleCopy} style={{ padding: "12px 20px", borderRadius: 6, border: "1.5px solid rgba(232,197,71,0.4)", background: copied ? "rgba(232,197,71,0.15)" : "transparent", color: "#E8C547", fontFamily: "'Space Mono', monospace", fontSize: 11, cursor: "pointer", transition: "all 0.2s", minWidth: 110 }}>
+          {copied ? "COPIED ✓" : "COPY PLAN"}
+        </button>
+      );
+    }
+
+    function ShareButton() {
+      const [shared, setShared] = useState(false);
+      const handleShare = () => {
+        const shareData = {
+          title: "PressReady · Launch Intelligence",
+          text: "Just got my full book launch plan from PressReady — free tool built by an indie press with 35 books. No signup needed.",
+          url: "https://pressready.ink"
+        };
+        if (navigator.share) {
+          navigator.share(shareData).catch(() => {});
+        } else {
+          navigator.clipboard.writeText("Just got my full book launch plan from PressReady — free tool built by an indie press. pressready.ink").then(() => {
+            setShared(true);
+            setTimeout(() => setShared(false), 2000);
+          }).catch(() => {
+            setShared(true);
+            setTimeout(() => setShared(false), 2000);
+          });
+        }
+      };
+      return (
+        <button onClick={handleShare} style={{ padding: "12px 20px", borderRadius: 6, border: "1.5px solid rgba(255,255,255,0.15)", background: shared ? "rgba(255,255,255,0.08)" : "transparent", color: "rgba(255,255,255,0.6)", fontFamily: "'Space Mono', monospace", fontSize: 11, cursor: "pointer", transition: "all 0.2s", minWidth: 100 }}>
+          {shared ? "LINK COPIED ✓" : "SHARE ↗"}
+        </button>
+      );
+    }
+
     function Wizard({ onBackToLanding }) {
       const [step, setStep] = useState(0);
       const [form, setForm] = useState({ genre: "", title: "", series: "", platform: "", budget: "", timeline: "" });
@@ -202,9 +294,15 @@
 
       const update = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
+      const track = (eventName, params = {}) => {
+        if (typeof gtag !== 'undefined') {
+          gtag('event', eventName, params);
+        }
+      };
+
       const canNext = () => {
         if (step === 0) return !!form.genre;
-        if (step === 1) return !!form.title;
+        if (step === 1) return !!form.title.trim();
         if (step === 2) return !!form.platform;
         if (step === 3) return !!form.budget;
         if (step === 4) return !!form.timeline;
@@ -213,6 +311,8 @@
 
       const generatePlan = async () => {
         setLoading(true); setError(null); setPlan(null); setParsedPlan(null);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
         const prompt = `You are an expert indie publishing strategist with deep knowledge of Amazon KDP, Kindle Unlimited, BookTok, NetGalley, ARC outreach, and book marketing.
 
 A self-published author needs a complete book launch plan:
@@ -232,7 +332,8 @@ Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMP
           const response = await fetch("/api/generate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt })
+            body: JSON.stringify({ prompt }),
+            signal: controller.signal
           });
           const data = await response.json();
           if (data.error) {
@@ -248,12 +349,22 @@ Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMP
           try {
             const parsed = JSON.parse(clean);
             setParsedPlan(parsed);
+            track('plan_generated', { genre: form.genre, platform: form.platform, budget: form.budget, timeline: form.timeline });
           } catch(e) {
             setPlan(clean);
           }
         } catch (err) {
-          setError("Connection error: " + err.message);
-        } finally { setLoading(false); }
+          if (err.name === 'AbortError') {
+            setError("Request timed out. The server took too long — please try again.");
+            track('generation_error', { reason: 'timeout', genre: form.genre });
+          } else {
+            setError("Connection error: " + err.message);
+            track('generation_error', { reason: err.message, genre: form.genre });
+          }
+        } finally {
+          clearTimeout(timeoutId);
+          setLoading(false);
+        }
       };
 
       const handleNext = () => { if (step < STEPS.length - 1) setStep(s => s + 1); else generatePlan(); };
@@ -263,7 +374,7 @@ Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMP
 
       return (
         <div style={{ minHeight: "100vh", background: "#0D0D0F", backgroundImage: "radial-gradient(ellipse at 20% 20%, rgba(232,197,71,0.06) 0%, transparent 60%)", fontFamily: "'Lora', Georgia, serif", padding: "0 16px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
-          <div style={{ width: "100%", maxWidth: 680, paddingTop: 32, marginBottom: 32, animation: "fadeUp 0.6s ease both", display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 16 }}>
+          <div className="no-print" style={{ width: "100%", maxWidth: 680, paddingTop: 32, marginBottom: 32, animation: "fadeUp 0.6s ease both", display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 16 }}>
             <div>
               <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.3em", textTransform: "uppercase", marginBottom: 12, opacity: 0.8 }}>PressReady · Launch Intelligence</div>
               <h1 style={{ fontSize: "clamp(28px, 5vw, 44px)", fontWeight: 600, color: "#FFFFFF", margin: 0, lineHeight: 1.15, fontFamily: "'Lora', Georgia, serif" }}>
@@ -279,7 +390,7 @@ Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMP
             {!plan && !parsedPlan && !loading && (
               <>
                 <ProgressBar step={step} />
-                {step === 0 && <div><Label>What genre is your book?</Label><SelectGrid options={GENRES} value={form.genre} onChange={v => update("genre", v)} /></div>}
+                {step === 0 && <div><Label>What genre is your book?</Label><SelectGrid options={GENRES} value={form.genre} onChange={v => { update("genre", v); track('genre_selected', { genre: v }); }} /></div>}
                 {step === 1 && <div><Label>Book details</Label><Input placeholder="Book title *" value={form.title} onChange={e => update("title", e.target.value)} /><Input placeholder="Series name (optional)" value={form.series} onChange={e => update("series", e.target.value)} style={{ marginTop: 12 }} /></div>}
                 {step === 2 && <div><Label>Publishing platform</Label><SelectGrid options={PLATFORMS} value={form.platform} onChange={v => update("platform", v)} /></div>}
                 {step === 3 && <div><Label>Marketing budget</Label><SelectGrid options={BUDGETS} value={form.budget} onChange={v => update("budget", v)} /></div>}
@@ -297,9 +408,9 @@ Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMP
               <div style={{ textAlign: "center", padding: "48px 0" }}>
                 <div style={{ width: 48, height: 48, borderRadius: "50%", border: "3px solid rgba(232,197,71,0.2)", borderTop: "3px solid #E8C547", margin: "0 auto 24px", animation: "spin 1s linear infinite" }} />
                 <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 12, color: "#E8C547", letterSpacing: "0.15em" }}>
-                  <TypewriterText text="BUILDING YOUR LAUNCH STRATEGY..." />
+                  <RotatingMessage />
                 </div>
-                <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 13, marginTop: 12, fontStyle: "italic" }}>Analyzing genre, platform & budget...</div>
+                <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 13, marginTop: 12, fontStyle: "italic" }}>This usually takes 10–20 seconds...</div>
               </div>
             )}
 
@@ -311,19 +422,26 @@ Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMP
             )}
 
             {(plan || parsedPlan) && !loading && (
-              <div style={{ animation: "fadeUp 0.5s ease both" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 32, flexWrap: "wrap", gap: 12 }}>
+              <div className="print-plan" style={{ animation: "fadeUp 0.5s ease both" }}>
+                <div className="no-print" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 32, flexWrap: "wrap", gap: 12 }}>
                   <div>
                     <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 6 }}>LAUNCH PLAN READY</div>
                     <h2 style={{ fontFamily: "'Lora', serif", color: "#fff", fontSize: 22, margin: 0, fontWeight: 600 }}>{form.title}</h2>
                     <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>{form.genre} · {form.platform} · {form.timeline}</div>
                   </div>
-                  <div style={{ display: "flex", gap: 10 }}>
-                    <button onClick={() => navigator.clipboard.writeText(planText)} style={{ padding: "8px 16px", borderRadius: 6, border: "1.5px solid rgba(232,197,71,0.4)", background: "transparent", color: "#E8C547", fontFamily: "'Space Mono', monospace", fontSize: 11, cursor: "pointer" }}>COPY PLAN</button>
-                    <button onClick={reset} style={{ padding: "8px 16px", borderRadius: 6, border: "1.5px solid rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.5)", fontFamily: "'Space Mono', monospace", fontSize: 11, cursor: "pointer" }}>NEW PLAN</button>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <CopyButton planText={planText} onCopy={() => track('plan_copied', { genre: form.genre })} />
+                    <ShareButton />
+                    <button onClick={() => { track('plan_downloaded', { genre: form.genre }); window.print(); }} style={{ padding: "12px 20px", borderRadius: 6, border: "1.5px solid rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.6)", fontFamily: "'Space Mono', monospace", fontSize: 11, cursor: "pointer" }}>SAVE PDF</button>
+                    <button onClick={reset} style={{ padding: "12px 20px", borderRadius: 6, border: "1.5px solid rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.5)", fontFamily: "'Space Mono', monospace", fontSize: 11, cursor: "pointer" }}>NEW PLAN</button>
                   </div>
                 </div>
-                <div style={{ height: 1, background: "rgba(232,197,71,0.2)", marginBottom: 32 }} />
+                <div className="print-only" style={{ marginBottom: 16 }}>
+                  <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#000", letterSpacing: "0.2em", marginBottom: 4 }}>LAUNCH PLAN READY — PRESSREADY.INK</div>
+                  <h2 style={{ fontFamily: "'Lora', serif", color: "#000", fontSize: 22, margin: 0, fontWeight: 600 }}>{form.title}</h2>
+                  <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#555", marginTop: 4, marginBottom: 16 }}>{form.genre} · {form.platform} · {form.timeline}</div>
+                </div>
+                <div className="no-print" style={{ height: 1, background: "rgba(232,197,71,0.2)", marginBottom: 32 }} />
                 {parsedPlan && (
                   <>
                     {parsedPlan.executive_summary && (
@@ -354,6 +472,34 @@ Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMP
       );
     }
 
+    class ErrorBoundary extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = { hasError: false, resetKey: 0 };
+      }
+      static getDerivedStateFromError() {
+        return { hasError: true };
+      }
+      handleReset() {
+        this.setState(prev => ({ hasError: false, resetKey: prev.resetKey + 1 }));
+      }
+      render() {
+        if (this.state.hasError) {
+          return (
+            <div style={{ minHeight: "100vh", background: "#0D0D0F", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}>
+              <div style={{ textAlign: "center", maxWidth: 480 }}>
+                <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 16 }}>PRESSREADY · LAUNCH INTELLIGENCE</div>
+                <h2 style={{ fontFamily: "'Lora', serif", color: "#fff", fontSize: 24, marginBottom: 16 }}>Something went wrong.</h2>
+                <p style={{ fontFamily: "'Lora', serif", color: "rgba(255,255,255,0.55)", fontSize: 15, lineHeight: 1.7, marginBottom: 28 }}>The plan ran into an unexpected error. This is rare — please try generating again.</p>
+                <button onClick={() => this.handleReset()} style={{ padding: "12px 28px", borderRadius: 8, background: "#E8C547", color: "#0D0D0F", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, letterSpacing: "0.12em", cursor: "pointer", textTransform: "uppercase" }}>Try Again</button>
+              </div>
+            </div>
+          );
+        }
+        return <div key={this.state.resetKey}>{this.props.children}</div>;
+      }
+    }
+
     function App() {
       const [view, setView] = useState('landing');
       return view === 'landing'
@@ -362,7 +508,7 @@ Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMP
     }
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
+    root.render(<ErrorBoundary><App /></ErrorBoundary>);
   </script>
 </body>
 </html>
