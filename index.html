@@ -58,13 +58,9 @@
       return (
         <div style={{ minHeight: "100vh", background: "#0D0D0F", backgroundImage: "radial-gradient(ellipse at 30% 0%, rgba(232,197,71,0.08) 0%, transparent 55%), radial-gradient(ellipse at 80% 90%, rgba(232,197,71,0.04) 0%, transparent 50%)", color: "#fff", fontFamily: "'Lora', Georgia, serif", padding: "0 16px 80px" }}>
           <div style={{ maxWidth: 920, margin: "0 auto" }}>
-
-            {/* Top eyebrow */}
             <div style={{ paddingTop: 40, animation: "fadeUp 0.5s ease both" }}>
               <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.3em", textTransform: "uppercase", opacity: 0.8 }}>PressReady · Launch Intelligence</div>
             </div>
-
-            {/* Hero */}
             <div style={{ paddingTop: 80, paddingBottom: 48, animation: "fadeUp 0.6s ease 0.1s both" }}>
               <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(232,197,71,0.8)", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 24 }}>For indie authors who actually publish</div>
               <h1 style={{ fontSize: "clamp(40px, 7vw, 72px)", fontWeight: 600, color: "#FFFFFF", lineHeight: 1.05, fontFamily: "'Lora', Georgia, serif", letterSpacing: "-0.02em" }}>
@@ -74,8 +70,6 @@
               <p style={{ color: "rgba(255,255,255,0.6)", fontSize: 18, marginTop: 28, fontFamily: "'Lora', Georgia, serif", lineHeight: 1.6, maxWidth: 620 }}>
                 PressReady generates a full launch strategy tailored to your genre, budget, and timeline. Built by an indie press with 35 books across 7 pen names — not a marketing agency, not a content farm.
               </p>
-
-              {/* Primary CTA */}
               <div style={{ marginTop: 44, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
                 <button onClick={onStart} style={{ padding: "18px 40px", borderRadius: 10, background: "#E8C547", color: "#0D0D0F", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 13, fontWeight: 700, letterSpacing: "0.14em", cursor: "pointer", textTransform: "uppercase", animation: "glow 3s ease-in-out infinite" }}>
                   Generate Your Plan →
@@ -83,80 +77,47 @@
                 <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.4)", letterSpacing: "0.08em" }}>Free · No signup · 60 seconds</span>
               </div>
             </div>
-
-            {/* Divider */}
             <div style={{ height: 1, background: "linear-gradient(90deg, transparent, rgba(232,197,71,0.3), transparent)", margin: "40px 0 60px", animation: "fadeIn 1s ease 0.6s both" }} />
-
-            {/* What it does — 3 columns */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 32, marginBottom: 80, animation: "fadeUp 0.7s ease 0.3s both" }}>
               <div>
                 <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 12 }}>01 — TAILORED</div>
                 <h3 style={{ fontFamily: "'Lora', serif", fontSize: 18, color: "#fff", marginBottom: 10, fontWeight: 600 }}>Genre-specific strategy</h3>
-                <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 1.7 }}>
-                  Urban fiction needs BookTok and KU. Literary fiction needs NetGalley and Kirkus. Sci-fi needs Discord. PressReady knows the difference.
-                </p>
+                <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 1.7 }}>Urban fiction needs BookTok and KU. Literary fiction needs NetGalley and Kirkus. Sci-fi needs Discord. PressReady knows the difference.</p>
               </div>
               <div>
                 <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 12 }}>02 — EXECUTABLE</div>
                 <h3 style={{ fontFamily: "'Lora', serif", fontSize: 18, color: "#fff", marginBottom: 10, fontWeight: 600 }}>Day-by-day actions</h3>
-                <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 1.7 }}>
-                  No generic advice. Twelve sections covering pricing, ARC outreach, launch week tactics, post-launch follow-through, and budget allocation.
-                </p>
+                <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 1.7 }}>No generic advice. Twelve sections covering pricing, ARC outreach, launch week tactics, post-launch follow-through, and budget allocation.</p>
               </div>
               <div>
                 <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 12 }}>03 — REAL</div>
                 <h3 style={{ fontFamily: "'Lora', serif", fontSize: 18, color: "#fff", marginBottom: 10, fontWeight: 600 }}>Built by a publisher</h3>
-                <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 1.7 }}>
-                  Most launch tools are built by people who've never published a book. PressReady was built by a press that has — 35 times, across 7 pen names.
-                </p>
+                <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 1.7 }}>Most launch tools are built by people who've never published a book. PressReady was built by a press that has — 35 times, across 7 pen names.</p>
               </div>
             </div>
-
-            {/* Press card */}
             <div style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: "36px 32px", marginBottom: 60, animation: "fadeUp 0.7s ease 0.4s both" }}>
               <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 20 }}>WHO BUILT THIS</div>
               <h3 style={{ fontFamily: "'Lora', serif", fontSize: 24, color: "#fff", marginBottom: 16, fontWeight: 600 }}>Black Fuego Press is an independent imprint with 35 books across 7 pen names.</h3>
-              <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.7)", lineHeight: 1.8, marginBottom: 14 }}>
-                The press operates across urban fiction, literary fiction, psychological thrillers, sci-fi, non-fiction, and historical fiction. Books in the catalog have run BookTok campaigns, NetGalley pushes, KU free promo stacks, BookBub features, and BCALA award submissions. The strategies that work — and the ones that don't — were learned the long way: title by title, launch by launch.
-              </p>
-              <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.7)", lineHeight: 1.8 }}>
-                Most launch advice online is recycled, written by people who've never sold a book they wrote themselves. PressReady was built so authors don't have to figure it out the hard way over six years and 35 books.
-              </p>
+              <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.7)", lineHeight: 1.8, marginBottom: 14 }}>The press operates across urban fiction, literary fiction, psychological thrillers, sci-fi, non-fiction, and historical fiction. Books in the catalog have run BookTok campaigns, NetGalley pushes, KU free promo stacks, BookBub features, and BCALA award submissions. The strategies that work — and the ones that don't — were learned the long way: title by title, launch by launch.</p>
+              <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.7)", lineHeight: 1.8 }}>Most launch advice online is recycled, written by people who've never sold a book they wrote themselves. PressReady was built so authors don't have to figure it out the hard way over six years and 35 books.</p>
               <div style={{ marginTop: 24, fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(232,197,71,0.7)", letterSpacing: "0.1em" }}>— Black Fuego Press</div>
             </div>
-
-            {/* Sample output preview */}
             <div style={{ marginBottom: 60, animation: "fadeUp 0.7s ease 0.5s both" }}>
               <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 16, textAlign: "center" }}>WHAT YOU GET</div>
               <h3 style={{ fontFamily: "'Lora', serif", fontSize: 22, color: "#fff", marginBottom: 28, fontWeight: 600, textAlign: "center" }}>A complete strategy across 12 sections.</h3>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-                {[
-                  "Strategy Overview", "Pre-Launch Checklist", "Launch Week Tactics",
-                  "Pricing Strategy", "Review & ARC Strategy", "Social Media Plan",
-                  "Algorithm Triggers", "Email List Building", "Post-Launch Plan",
-                  "Budget Breakdown", "Success Metrics", "Elite Insider Tip"
-                ].map((s, i) => (
+                {["Strategy Overview","Pre-Launch Checklist","Launch Week Tactics","Pricing Strategy","Review & ARC Strategy","Social Media Plan","Algorithm Triggers","Email List Building","Post-Launch Plan","Budget Breakdown","Success Metrics","Elite Insider Tip"].map((s, i) => (
                   <div key={s} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(232,197,71,0.15)", borderRadius: 6, padding: "12px 14px", fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.7)", letterSpacing: "0.05em" }}>
                     <span style={{ color: "#E8C547", marginRight: 8 }}>{String(i + 1).padStart(2, '0')}</span>{s}
                   </div>
                 ))}
               </div>
             </div>
-
-            {/* Bottom CTA */}
             <div style={{ textAlign: "center", padding: "60px 24px", background: "rgba(232,197,71,0.04)", border: "1px solid rgba(232,197,71,0.15)", borderRadius: 14, animation: "fadeUp 0.7s ease 0.6s both" }}>
-              <h3 style={{ fontFamily: "'Lora', serif", fontSize: 28, color: "#fff", fontWeight: 600, marginBottom: 14, lineHeight: 1.3 }}>
-                Got a book? <span style={{ fontStyle: "italic", color: "#E8C547" }}>Get a plan.</span>
-              </h3>
-              <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.55)", marginBottom: 28 }}>
-                Five quick questions. One real strategy. No email required.
-              </p>
-              <button onClick={onStart} style={{ padding: "16px 36px", borderRadius: 10, background: "#E8C547", color: "#0D0D0F", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", cursor: "pointer", textTransform: "uppercase" }}>
-                Generate Your Plan →
-              </button>
+              <h3 style={{ fontFamily: "'Lora', serif", fontSize: 28, color: "#fff", fontWeight: 600, marginBottom: 14, lineHeight: 1.3 }}>Got a book? <span style={{ fontStyle: "italic", color: "#E8C547" }}>Get a plan.</span></h3>
+              <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.55)", marginBottom: 28 }}>Five quick questions. One real strategy. No email required.</p>
+              <button onClick={onStart} style={{ padding: "16px 36px", borderRadius: 10, background: "#E8C547", color: "#0D0D0F", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", cursor: "pointer", textTransform: "uppercase" }}>Generate Your Plan →</button>
             </div>
-
-            {/* Footer */}
             <div style={{ marginTop: 60, paddingTop: 32, borderTop: "1px solid rgba(255,255,255,0.06)", textAlign: "center", fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.25)", letterSpacing: "0.15em", animation: "fadeIn 1s ease 0.8s both" }}>
               POWERED BY PRESSREADY · LAUNCH INTELLIGENCE<br/>
               <span style={{ marginTop: 8, display: "inline-block", opacity: 0.7 }}>A Black Fuego Press Project</span>
@@ -207,16 +168,16 @@
     }
 
     function PlanSection({ title, content, delay = 0 }) {
-  const [visible, setVisible] = useState(false);
-  useEffect(() => { const t = setTimeout(() => setVisible(true), delay); return () => clearTimeout(t); }, []);
-  const text = typeof content === 'string' ? content : typeof content === 'object' ? Object.values(content).join('\n') : String(content);
-  return (
-    <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(16px)", transition: "all 0.5s ease", marginBottom: 28, borderLeft: "3px solid #E8C547", paddingLeft: 18 }}>
-      <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#E8C547", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 10 }}>{title}</div>
-      <div style={{ fontFamily: "'Lora', Georgia, serif", fontSize: 15, color: "rgba(255,255,255,0.88)", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{text}</div>
-    </div>
-  );
-}
+      const [visible, setVisible] = useState(false);
+      useEffect(() => { const t = setTimeout(() => setVisible(true), delay); return () => clearTimeout(t); }, []);
+      const text = typeof content === 'string' ? content : typeof content === 'object' ? Object.values(content).join('\n') : String(content);
+      return (
+        <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(16px)", transition: "all 0.5s ease", marginBottom: 28, borderLeft: "3px solid #E8C547", paddingLeft: 18 }}>
+          <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#E8C547", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 10 }}>{title}</div>
+          <div style={{ fontFamily: "'Lora', Georgia, serif", fontSize: 15, color: "rgba(255,255,255,0.88)", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{text}</div>
+        </div>
+      );
+    }
 
     function Label({ children }) {
       return <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 16 }}>{children}</div>;
@@ -262,10 +223,10 @@ A self-published author needs a complete book launch plan:
 - Marketing Budget: ${form.budget}
 - Launch Timeline: ${form.timeline}
 
-Generate a comprehensive, actionable launch plan in JSON format with exactly these keys:
-{"executive_summary":"2-3 sentence overview","pre_launch":"Detailed pre-launch checklist with bullet points","launch_week":"Specific launch week tactics day by day","pricing_strategy":"Exact pricing recommendations","review_strategy":"ARC, NetGalley, BookTok approach","social_media":"Platform-specific content calendar","algorithm_tips":"Platform-specific algorithm triggers","email_list":"Email list building strategy","post_launch":"30/60/90 day post-launch plan","budget_breakdown":"How to allocate budget with specific amounts","kpis":"Key metrics and success definition","pro_tip":"One elite-level insider tactic most authors miss"}
+Generate a concise, actionable launch plan in JSON format with exactly these keys and length limits:
+{"executive_summary":"2-3 sentences max","pre_launch":"8-10 bullet points max","launch_week":"7 days, 2-3 bullets each day","pricing_strategy":"5 bullet points max","review_strategy":"6 bullet points max","social_media":"6 bullet points max","algorithm_tips":"6 bullet points max","email_list":"6 bullet points max","post_launch":"3 phases, 3 bullets each","budget_breakdown":"5 bullet points max","kpis":"5 bullet points max","pro_tip":"2-3 sentences max"}
 
-Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMPORTANT: Every value in the JSON must be a plain string with line breaks using \n and bullet points using •. Do NOT use nested objects or arrays. Return ONLY valid JSON, no markdown, no explanation.`;
+Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMPORTANT: Every value in the JSON must be a plain string with line breaks using \\n and bullet points using •. Do NOT use nested objects or arrays. Return ONLY valid JSON, no markdown, no explanation.`;
 
         try {
           const response = await fetch("/api/generate", {
