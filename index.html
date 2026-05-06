@@ -207,15 +207,16 @@
     }
 
     function PlanSection({ title, content, delay = 0 }) {
-      const [visible, setVisible] = useState(false);
-      useEffect(() => { const t = setTimeout(() => setVisible(true), delay); return () => clearTimeout(t); }, []);
-      return (
-        <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(16px)", transition: "all 0.5s ease", marginBottom: 28, borderLeft: "3px solid #E8C547", paddingLeft: 18 }}>
-          <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#E8C547", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 10 }}>{title}</div>
-          <div style={{ fontFamily: "'Lora', Georgia, serif", fontSize: 15, color: "rgba(255,255,255,0.88)", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{typeof content === 'object' ? JSON.stringify(content, null, 2) : content}</div>
-        </div>
-      );
-    }
+  const [visible, setVisible] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setVisible(true), delay); return () => clearTimeout(t); }, []);
+  const text = typeof content === 'string' ? content : typeof content === 'object' ? Object.values(content).join('\n') : String(content);
+  return (
+    <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(16px)", transition: "all 0.5s ease", marginBottom: 28, borderLeft: "3px solid #E8C547", paddingLeft: 18 }}>
+      <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#E8C547", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 10 }}>{title}</div>
+      <div style={{ fontFamily: "'Lora', Georgia, serif", fontSize: 15, color: "rgba(255,255,255,0.88)", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{text}</div>
+    </div>
+  );
+}
 
     function Label({ children }) {
       return <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 16 }}>{children}</div>;
