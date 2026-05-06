@@ -226,7 +226,7 @@ A self-published author needs a complete book launch plan:
 Generate a concise, actionable launch plan in JSON format with exactly these keys and length limits:
 {"executive_summary":"2-3 sentences max","pre_launch":"8-10 bullet points max","launch_week":"7 days, 2-3 bullets each day","pricing_strategy":"5 bullet points max","review_strategy":"6 bullet points max","social_media":"6 bullet points max","algorithm_tips":"6 bullet points max","email_list":"6 bullet points max","post_launch":"3 phases, 3 bullets each","budget_breakdown":"5 bullet points max","kpis":"5 bullet points max","pro_tip":"2-3 sentences max"}
 
-Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMPORTANT: Every value in the JSON must be a plain string with line breaks using \\n and bullet points using •. Do NOT use nested objects or arrays. Return ONLY valid JSON, no markdown, no explanation.`;
+Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMPORTANT: Every value in the JSON must be a plain string with line breaks using \\n and bullet points using •. Do NOT use nested objects or arrays. Return ONLY the JSON object. No explanation, no preamble, no text before or after the JSON.`;
 
         try {
           const response = await fetch("/api/generate", {
@@ -242,7 +242,9 @@ Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMP
           }
           const raw = (data.content || []).map(b => b.text || "").join("") || "";
           if (!raw) { setError("No response received. Please try again."); return; }
-          const clean = raw.replace(/```json|```/g, "").replace(/^\s*`+|`+\s*$/g, "").trim();
+          const jsonStart = raw.indexOf("{");
+          const jsonEnd = raw.lastIndexOf("}");
+          const clean = (jsonStart !== -1 && jsonEnd !== -1) ? raw.slice(jsonStart, jsonEnd + 1).trim() : raw.replace(/```json|```/g, "").replace(/^\s*`+|`+\s*$/g, "").trim();
           try {
             const parsed = JSON.parse(clean);
             setParsedPlan(parsed);
