@@ -176,7 +176,8 @@ BRANCHING RULES — APPLY BEFORE WRITING ANYTHING:
 
 PROHIBITED:
 - Do not invent reach numbers for hashtags or platforms ("35-50k reach each" type fabrications).
-- Do not invent specific follower counts, open rates, or engagement percentages. If you cite a benchmark, frame it as "industry median for engaged author lists" without a fake number.
+- Do not invent any numerical benchmarks for views, reach, follower counts, open rates, click-through rates, or engagement percentages. Use qualitative framing only ("modest early traction," "enough to signal the algorithm").
+- Do not predict specific revenue figures, unit sales counts, KU page-read totals, or review counts. KPIs must be framed as targets to track, NOT as forecasts. Wrong: "expect 80-150 paid units." Right: "track paid units sold; benchmark against your prior launches."
 - Do not recommend tactics the author has already outgrown based on inputs above.
 - Do not write generic "elite insider tip" content. The pro tip must be non-obvious and specific to THIS author's combination of inputs.
 - Do not exceed the stated budget. Do not assume the author can spend more.
@@ -193,7 +194,7 @@ OUTPUT FORMAT — return ONLY this JSON, no preamble, no markdown fences:
   "email_list": "6 bullets max, tailored to list size above",
   "post_launch": "3 phases, 3 bullets each",
   "budget_breakdown": "5 bullets max, must respect stated budget",
-  "kpis": "5 bullets max, realistic for experience level",
+  "kpis": "5 bullets max. Each KPI is a metric to track, not a number to forecast. Example format: 'Track launch-week unit sales; compare against your prior launches as the benchmark.'",
   "pro_tip": "2-3 sentences. Must be specific to this author's inputs. Not generic."
 }
 
@@ -449,7 +450,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
     const INITIAL_FORM = {
       genre: "",
       title: "",
-      series_position: "Standalone",
+      series_position: "",  // empty so user must actively pick; canNext() enforces it
       experience: "",
       list_size: "",
       catalog_size: "",
