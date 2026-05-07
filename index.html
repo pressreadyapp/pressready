@@ -10,11 +10,9 @@
   <meta property="og:description" content="Get a full book launch plan in 60 seconds. Built by an indie press with 35 books across 7 pen names. Free, no signup required." />
   <meta property="og:url" content="https://pressready.ink" />
   <meta property="og:type" content="website" />
-  <!-- og:image omitted until og-image.png is uploaded to repo root -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="PressReady · Launch Intelligence" />
   <meta name="twitter:description" content="Get a full book launch plan in 60 seconds. Free, no signup." />
-  <!-- Favicon -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='12' fill='%230D0D0F'/><text y='72' x='50' text-anchor='middle' font-size='60' font-family='Georgia,serif' fill='%23E8C547'>P</text></svg>" />
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-QDYVPWPDWD"></script>
@@ -56,12 +54,18 @@
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
+    /* ============================================================
+       CONFIG — all constants in one place so you can tune without
+       hunting through the file.
+       ============================================================ */
+
     const STEPS = [
-      { id: "genre", label: "Genre" },
-      { id: "details", label: "Book Details" },
-      { id: "platform", label: "Platform" },
-      { id: "budget", label: "Budget" },
-      { id: "timeline", label: "Timeline" },
+      { id: "genre",      label: "Genre" },
+      { id: "details",    label: "Book" },
+      { id: "experience", label: "Experience" },
+      { id: "platform",   label: "Platform" },
+      { id: "budget",     label: "Budget" },
+      { id: "timeline",   label: "Timeline" },
     ];
 
     const GENRES = [
@@ -70,9 +74,173 @@
       "Non-Fiction", "Self-Help", "Biography", "Horror", "Historical Fiction"
     ];
 
+    const SERIES_POSITIONS = [
+      "Standalone",
+      "Book 1 of series",
+      "Mid-series (book 2-4)",
+      "Series finale",
+      "Spin-off / companion"
+    ];
+
+    const EXPERIENCE = [
+      "First book",
+      "2-5 books published",
+      "6+ books published"
+    ];
+
+    const LIST_SIZES = [
+      "No list yet",
+      "Under 100",
+      "100-1,000",
+      "1,000+"
+    ];
+
+    const CATALOG_SIZES = [
+      "Only this book",
+      "2-5 other titles",
+      "6+ other titles in this pen name"
+    ];
+
     const PLATFORMS = ["Amazon KDP / Kindle Unlimited", "IngramSpark / Wide", "Both KDP + Wide", "Draft2Digital"];
     const BUDGETS = ["$0 – Bootstrap only", "$1–$100", "$101–$500", "$501–$1,000", "$1,000+"];
     const TIMELINES = ["2 weeks", "1 month", "2 months", "3 months", "6 months"];
+
+    const LOADING_MESSAGES = [
+      "ANALYZING YOUR GENRE...",
+      "BRANCHING ON YOUR EXPERIENCE LEVEL...",
+      "TAILORING TO YOUR CATALOG...",
+      "MAPPING YOUR PLATFORM STRATEGY...",
+      "FINALIZING YOUR LAUNCH PLAN..."
+    ];
+
+    /* ============================================================
+       PROMPT BUILDER — top-level pure function. Easy to find,
+       easy to A/B test, easy to read.
+       ============================================================ */
+
+    function buildPrompt(form) {
+      return `You are PressReady, a launch strategist built by an indie press with 35 books across 7 pen names. You speak operator-to-operator. You do not pad. You do not hype.
+
+AUTHOR INPUTS:
+- Genre: ${form.genre}
+- Book title: ${form.title}
+- Series position: ${form.series_position}
+- Author experience: ${form.experience}
+- Existing email list: ${form.list_size}
+- Other titles in this pen name: ${form.catalog_size}
+- Platform: ${form.platform}
+- Budget: ${form.budget}
+- Timeline: ${form.timeline}
+
+BRANCHING RULES — APPLY BEFORE WRITING ANYTHING:
+
+1. EXPERIENCE LEVEL
+- "First book": include foundational tactics (set up Goodreads, build initial list, find beta readers).
+- "2-5 books": skip basic setup. Assume Goodreads, KDP, and a small list exist. Focus on improving conversion and reaching the next tier.
+- "6+ books": this author has infrastructure and a proven catalog. DO NOT recommend list-building from zero, basic Goodreads setup, or first-time KDP tactics. Focus on catalog leverage, read-through, and scaling what already works.
+
+2. LIST SIZE
+- "No list yet" or "Under 100": prioritize list-building from real touchpoints (book back matter, social bio, lead magnets).
+- "100-1,000": focus on segmentation, engagement, and conversion — not pure growth.
+- "1,000+": list is an asset. Focus on launch-day mobilization, segmentation by reader behavior, and read-through emails.
+
+3. SERIES POSITION
+- "Standalone": standard launch playbook.
+- "Book 1 of series": prioritize hook, sample, and series-setup. Note that real read-through plays come once Book 2 exists.
+- "Mid-series" or "Series finale": READ-THROUGH IS THE PRIMARY STRATEGY. Recommend free or $0.99 promo on Book 1 to drive paid sales and KU reads on the new release. DO NOT recommend pricing the new release at $0.99 — that cannibalizes read-through revenue from a series the reader is already invested in.
+- "Spin-off / companion": leverage existing series fanbase via back matter, email, and series page placement.
+
+4. CATALOG SIZE
+- "Only this book": no cross-promotion possible yet; focus on this title's standalone performance.
+- "2-5 other titles": back matter cross-promo is a tactic, not the strategy.
+- "6+ other titles in this pen name": back matter cross-promotion, series page optimization, and catalog-wide free promo rotation are PRIMARY tactics. The catalog is the moat.
+
+5. GENRE TAILORING
+- Urban Fiction: BookTok, Black bookstagram, KU read-through, urban fiction Facebook groups, street team grassroots.
+- Literary Fiction: NetGalley, Kirkus/Publishers Weekly, indie bookstore outreach, BCALA and similar awards, longer review cycles.
+- Psychological Thriller: BookTok, ARC services like BookSirens, thriller-specific newsletters, Goodreads thriller groups.
+- Science Fiction / Fantasy: r/printSF, r/Fantasy, Goodreads groups, series cross-promo, novella prequels for series setup.
+- Romance: BookTok dominant, KU read-through critical, tropes loaded into metadata and blurb.
+- Mystery: cozy/hardboiled subgenre matters; Goodreads mystery groups, NetGalley, podcast tour for series authors.
+- Non-Fiction / Self-Help / Biography: LinkedIn, podcast tour, expert positioning, evergreen tail; less BookTok dependency.
+- Historical Fiction: NetGalley, historical fiction Facebook groups, reading-group/book-club outreach.
+- Horror: r/horrorlit, BookTok horror, indie horror podcasts, Halloween-season timing if relevant.
+- Use the actual genre named above; do not blend recommendations across genres.
+
+6. BUDGET DISCIPLINE
+- "$0 – Bootstrap only": zero paid recommendations. Every tactic must be free. Time is the only currency.
+- "$1–$100": small Amazon Ads test only after organic validation; free promo tools.
+- "$101–$500": modest Amazon Ads, one paid newsletter feature (Freebooksy/BargainBooksy tier).
+- "$501–$1,000": stacked promo days, BookBub Featured Deal candidate, Amazon Ads at sustainable spend.
+- "$1,000+": full launch stack — BookBub, paid PR, expanded ads, ARC service.
+
+PROHIBITED:
+- Do not invent reach numbers for hashtags or platforms ("35-50k reach each" type fabrications).
+- Do not invent specific follower counts, open rates, or engagement percentages. If you cite a benchmark, frame it as "industry median for engaged author lists" without a fake number.
+- Do not recommend tactics the author has already outgrown based on inputs above.
+- Do not write generic "elite insider tip" content. The pro tip must be non-obvious and specific to THIS author's combination of inputs.
+- Do not exceed the stated budget. Do not assume the author can spend more.
+
+OUTPUT FORMAT — return ONLY this JSON, no preamble, no markdown fences:
+{
+  "executive_summary": "2-3 sentences max, specific to inputs",
+  "pre_launch": "6-10 bullets, tailored to experience level",
+  "launch_week": "7 days, 2-3 bullets each day, formatted as 'Day 1: ...\\nDay 2: ...'",
+  "pricing_strategy": "5 bullets max, must respect series position rules above",
+  "review_strategy": "6 bullets max",
+  "social_media": "6 bullets max, genre-appropriate platforms only",
+  "algorithm_tips": "6 bullets max",
+  "email_list": "6 bullets max, tailored to list size above",
+  "post_launch": "3 phases, 3 bullets each",
+  "budget_breakdown": "5 bullets max, must respect stated budget",
+  "kpis": "5 bullets max, realistic for experience level",
+  "pro_tip": "2-3 sentences. Must be specific to this author's inputs. Not generic."
+}
+
+Every value is a plain string. Use \\n for line breaks and • for bullets. Do NOT use nested objects or arrays.`;
+    }
+
+    /* ============================================================
+       UTILITIES — small focused helpers.
+       ============================================================ */
+
+    // Single tracking helper. Replaces scattered `if (typeof gtag !== 'undefined')`.
+    function track(eventName, params = {}) {
+      if (typeof gtag !== 'undefined') gtag('event', eventName, params);
+    }
+
+    // Defensive JSON cleanup. Models sometimes wrap in fences, add preamble,
+    // or trail with explanation. This finds the outermost {...} reliably.
+    function extractJSON(raw) {
+      if (!raw) return null;
+      const stripped = raw.replace(/```json|```/g, "").trim();
+      const start = stripped.indexOf("{");
+      const end = stripped.lastIndexOf("}");
+      if (start === -1 || end === -1 || end <= start) return null;
+      const candidate = stripped.slice(start, end + 1);
+      try {
+        return JSON.parse(candidate);
+      } catch {
+        return null;
+      }
+    }
+
+    // Required keys for a valid plan. If any are missing, we know to flag.
+    const REQUIRED_PLAN_KEYS = [
+      "executive_summary", "pre_launch", "launch_week", "pricing_strategy",
+      "review_strategy", "social_media", "algorithm_tips", "email_list",
+      "post_launch", "budget_breakdown", "kpis", "pro_tip"
+    ];
+
+    function validatePlan(plan) {
+      if (!plan || typeof plan !== 'object') return { valid: false, missing: REQUIRED_PLAN_KEYS };
+      const missing = REQUIRED_PLAN_KEYS.filter(k => !plan[k]);
+      return { valid: missing.length === 0, missing };
+    }
+
+    /* ============================================================
+       PRESENTATIONAL COMPONENTS — visual layer, no logic.
+       ============================================================ */
 
     function Landing({ onStart }) {
       return (
@@ -88,7 +256,7 @@
                 <span style={{ fontStyle: "italic", color: "#E8C547" }}>In 60 seconds.</span>
               </h1>
               <p style={{ color: "rgba(255,255,255,0.6)", fontSize: 18, marginTop: 28, fontFamily: "'Lora', Georgia, serif", lineHeight: 1.6, maxWidth: 620 }}>
-                PressReady generates a full launch strategy tailored to your genre, budget, and timeline. Built by an indie press with 35 books across 7 pen names — not a marketing agency, not a content farm.
+                PressReady generates a full launch strategy tailored to your genre, experience level, catalog, budget, and timeline. Built by an indie press with 35 books across 7 pen names — not a marketing agency, not a content farm.
               </p>
               <div style={{ marginTop: 44, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
                 <button onClick={onStart} style={{ padding: "18px 40px", borderRadius: 10, background: "#E8C547", color: "#0D0D0F", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 13, fontWeight: 700, letterSpacing: "0.14em", cursor: "pointer", textTransform: "uppercase", animation: "glow 3s ease-in-out infinite" }}>
@@ -101,8 +269,8 @@
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 32, marginBottom: 80, animation: "fadeUp 0.7s ease 0.3s both" }}>
               <div>
                 <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 12 }}>01 — TAILORED</div>
-                <h3 style={{ fontFamily: "'Lora', serif", fontSize: 18, color: "#fff", marginBottom: 10, fontWeight: 600 }}>Genre-specific strategy</h3>
-                <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 1.7 }}>Urban fiction needs BookTok and KU. Literary fiction needs NetGalley and Kirkus. Sci-fi needs Discord. PressReady knows the difference.</p>
+                <h3 style={{ fontFamily: "'Lora', serif", fontSize: 18, color: "#fff", marginBottom: 10, fontWeight: 600 }}>Genre + experience aware</h3>
+                <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 1.7 }}>A debut and a 6-book backlist need different plans. PressReady asks the right questions and branches accordingly. No one-size-fits-all.</p>
               </div>
               <div>
                 <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 12 }}>02 — EXECUTABLE</div>
@@ -135,7 +303,7 @@
             </div>
             <div style={{ textAlign: "center", padding: "60px 24px", background: "rgba(232,197,71,0.04)", border: "1px solid rgba(232,197,71,0.15)", borderRadius: 14, animation: "fadeUp 0.7s ease 0.6s both" }}>
               <h3 style={{ fontFamily: "'Lora', serif", fontSize: 28, color: "#fff", fontWeight: 600, marginBottom: 14, lineHeight: 1.3 }}>Got a book? <span style={{ fontStyle: "italic", color: "#E8C547" }}>Get a plan.</span></h3>
-              <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.55)", marginBottom: 28 }}>Five quick questions. One real strategy. No email required.</p>
+              <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.55)", marginBottom: 28 }}>Six quick questions. One real strategy. No email required.</p>
               <button onClick={onStart} style={{ padding: "16px 36px", borderRadius: 10, background: "#E8C547", color: "#0D0D0F", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", cursor: "pointer", textTransform: "uppercase" }}>Generate Your Plan →</button>
             </div>
             <div style={{ marginTop: 60, paddingTop: 32, borderTop: "1px solid rgba(255,255,255,0.06)", textAlign: "center", fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.25)", letterSpacing: "0.15em", animation: "fadeIn 1s ease 0.8s both" }}>
@@ -149,20 +317,20 @@
 
     function ProgressBar({ step }) {
       return (
-        <div style={{ display: "flex", gap: 8, marginBottom: 36 }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 36 }}>
           {STEPS.map((s, i) => (
             <div key={s.id} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
               <div style={{ width: "100%", height: 4, borderRadius: 2, background: i <= step ? "#E8C547" : "rgba(255,255,255,0.12)", transition: "background 0.4s" }} />
-              <span style={{ fontSize: 10, fontFamily: "'Space Mono', monospace", color: i <= step ? "#E8C547" : "rgba(255,255,255,0.3)", letterSpacing: "0.08em", textTransform: "uppercase", transition: "color 0.4s" }}>{s.label}</span>
+              <span style={{ fontSize: 9, fontFamily: "'Space Mono', monospace", color: i <= step ? "#E8C547" : "rgba(255,255,255,0.3)", letterSpacing: "0.06em", textTransform: "uppercase", transition: "color 0.4s" }}>{s.label}</span>
             </div>
           ))}
         </div>
       );
     }
 
-    function SelectGrid({ options, value, onChange }) {
+    function SelectGrid({ options, value, onChange, minWidth = 140 }) {
       return (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${minWidth}px, 1fr))`, gap: 10 }}>
           {options.map(opt => (
             <button key={opt} onClick={() => onChange(opt)} style={{ padding: "12px 14px", borderRadius: 8, border: "1.5px solid", borderColor: value === opt ? "#E8C547" : "rgba(255,255,255,0.15)", background: value === opt ? "rgba(232,197,71,0.12)" : "rgba(255,255,255,0.04)", color: value === opt ? "#E8C547" : "rgba(255,255,255,0.75)", fontFamily: "'Space Mono', monospace", fontSize: 12, cursor: "pointer", textAlign: "left", lineHeight: 1.4, transition: "all 0.2s" }}>
               {value === opt && <span style={{ marginRight: 6 }}>✦</span>}{opt}
@@ -186,14 +354,6 @@
       }, [text]);
       return <span>{displayed}{!done && <span style={{ opacity: 0.6, animation: "blink 1s infinite" }}>▋</span>}</span>;
     }
-
-    const LOADING_MESSAGES = [
-      "ANALYZING YOUR GENRE...",
-      "BUILDING YOUR LAUNCH TIMELINE...",
-      "CALCULATING BUDGET ALLOCATION...",
-      "MAPPING YOUR PLATFORM STRATEGY...",
-      "FINALIZING YOUR LAUNCH PLAN..."
-    ];
 
     function RotatingMessage() {
       const [index, setIndex] = useState(0);
@@ -234,21 +394,22 @@
     function CopyButton({ planText, onCopy }) {
       const [copied, setCopied] = useState(false);
       const handleCopy = () => {
-        navigator.clipboard.writeText(planText).then(() => {
+        const finish = () => {
           setCopied(true);
           if (onCopy) onCopy();
           setTimeout(() => setCopied(false), 2000);
-        }).catch(() => {
-          // Fallback for non-HTTPS or blocked clipboard
-          const el = document.createElement('textarea');
-          el.value = planText;
-          document.body.appendChild(el);
-          el.select();
-          document.execCommand('copy');
-          document.body.removeChild(el);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
-        });
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(planText).then(finish).catch(() => {
+            const el = document.createElement('textarea');
+            el.value = planText;
+            document.body.appendChild(el);
+            el.select();
+            try { document.execCommand('copy'); } catch {}
+            document.body.removeChild(el);
+            finish();
+          });
+        }
       };
       return (
         <button onClick={handleCopy} style={{ padding: "12px 20px", borderRadius: 6, border: "1.5px solid rgba(232,197,71,0.4)", background: copied ? "rgba(232,197,71,0.15)" : "transparent", color: "#E8C547", fontFamily: "'Space Mono', monospace", fontSize: 11, cursor: "pointer", transition: "all 0.2s", minWidth: 110 }}>
@@ -265,16 +426,13 @@
           text: "Just got my full book launch plan from PressReady — free tool built by an indie press with 35 books. No signup needed.",
           url: "https://pressready.ink"
         };
+        const flagShared = () => { setShared(true); setTimeout(() => setShared(false), 2000); };
         if (navigator.share) {
           navigator.share(shareData).catch(() => {});
+        } else if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText("Just got my full book launch plan from PressReady — free tool built by an indie press. pressready.ink").then(flagShared).catch(flagShared);
         } else {
-          navigator.clipboard.writeText("Just got my full book launch plan from PressReady — free tool built by an indie press. pressready.ink").then(() => {
-            setShared(true);
-            setTimeout(() => setShared(false), 2000);
-          }).catch(() => {
-            setShared(true);
-            setTimeout(() => setShared(false), 2000);
-          });
+          flagShared();
         }
       };
       return (
@@ -284,49 +442,51 @@
       );
     }
 
+    /* ============================================================
+       WIZARD — the actual app logic.
+       ============================================================ */
+
+    const INITIAL_FORM = {
+      genre: "",
+      title: "",
+      series_position: "Standalone",
+      experience: "",
+      list_size: "",
+      catalog_size: "",
+      platform: "",
+      budget: "",
+      timeline: ""
+    };
+
     function Wizard({ onBackToLanding }) {
       const [step, setStep] = useState(0);
-      const [form, setForm] = useState({ genre: "", title: "", series: "", platform: "", budget: "", timeline: "" });
+      const [form, setForm] = useState(INITIAL_FORM);
       const [loading, setLoading] = useState(false);
-      const [plan, setPlan] = useState(null);
-      const [error, setError] = useState(null);
+      const [plan, setPlan] = useState(null);          // raw fallback if JSON parsing fails
       const [parsedPlan, setParsedPlan] = useState(null);
+      const [error, setError] = useState(null);
 
       const update = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
-      const track = (eventName, params = {}) => {
-        if (typeof gtag !== 'undefined') {
-          gtag('event', eventName, params);
-        }
-      };
-
+      // Validation per step. Single source of truth — used by the Next button.
       const canNext = () => {
-        if (step === 0) return !!form.genre;
-        if (step === 1) return !!form.title.trim();
-        if (step === 2) return !!form.platform;
-        if (step === 3) return !!form.budget;
-        if (step === 4) return !!form.timeline;
-        return true;
+        switch (step) {
+          case 0: return !!form.genre;
+          case 1: return !!form.title.trim() && !!form.series_position;
+          case 2: return !!form.experience && !!form.list_size && !!form.catalog_size;
+          case 3: return !!form.platform;
+          case 4: return !!form.budget;
+          case 5: return !!form.timeline;
+          default: return true;
+        }
       };
 
       const generatePlan = async (retryCount = 0) => {
         setLoading(true); setError(null); setPlan(null); setParsedPlan(null);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 55000);
-        const prompt = `You are an expert indie publishing strategist with deep knowledge of Amazon KDP, Kindle Unlimited, BookTok, NetGalley, ARC outreach, and book marketing.
 
-A self-published author needs a complete book launch plan:
-- Genre: ${form.genre}
-- Book Title: ${form.title}
-- Series: ${form.series || "Standalone"}
-- Platform: ${form.platform}
-- Marketing Budget: ${form.budget}
-- Launch Timeline: ${form.timeline}
-
-Generate a concise, actionable launch plan in JSON format with exactly these keys and length limits:
-{"executive_summary":"2-3 sentences max","pre_launch":"8-10 bullet points max","launch_week":"7 days, 2-3 bullets each day","pricing_strategy":"5 bullet points max","review_strategy":"6 bullet points max","social_media":"6 bullet points max","algorithm_tips":"6 bullet points max","email_list":"6 bullet points max","post_launch":"3 phases, 3 bullets each","budget_breakdown":"5 bullet points max","kpis":"5 bullet points max","pro_tip":"2-3 sentences max"}
-
-Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMPORTANT: Every value in the JSON must be a plain string with line breaks using \\n and bullet points using •. Do NOT use nested objects or arrays. Return ONLY the JSON object. No explanation, no preamble, no text before or after the JSON.`;
+        const prompt = buildPrompt(form);
 
         try {
           const response = await fetch("/api/generate", {
@@ -336,39 +496,45 @@ Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMP
             signal: controller.signal
           });
           const data = await response.json();
+
           if (data.error) {
             const msg = typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error));
             setError(msg);
             return;
           }
-          const raw = (data.content || []).map(b => b.text || "").join("") || "";
+
+          const raw = (data.content || []).map(b => b.text || "").join("");
           if (!raw) { setError("No response received. Please try again."); return; }
-          const jsonStart = raw.indexOf("{");
-          const jsonEnd = raw.lastIndexOf("}");
-          const clean = (jsonStart !== -1 && jsonEnd !== -1) ? raw.slice(jsonStart, jsonEnd + 1).trim() : raw.replace(/```json|```/g, "").replace(/^\s*`+|`+\s*$/g, "").trim();
-          try {
-            const parsed = JSON.parse(clean);
+
+          const parsed = extractJSON(raw);
+          if (parsed) {
+            const { valid, missing } = validatePlan(parsed);
             setParsedPlan(parsed);
-            track('plan_generated', { genre: form.genre, platform: form.platform, budget: form.budget, timeline: form.timeline });
-          } catch(e) {
-            setPlan(clean);
+            track('plan_generated', {
+              genre: form.genre,
+              experience: form.experience,
+              series_position: form.series_position,
+              platform: form.platform,
+              valid,
+              missing_count: missing.length
+            });
+          } else {
+            // Couldn't parse — show raw text as fallback.
+            setPlan(raw);
+            track('plan_generated_unparsed', { genre: form.genre });
           }
         } catch (err) {
-          if (err.name === 'AbortError') {
-            if (retryCount < 1) {
-              // Auto-retry once before showing error
-              setLoading(false);
-              generatePlan(retryCount + 1);
-              return;
-            }
+          const isTimeout = err.name === 'AbortError';
+          if (retryCount < 1) {
+            // One silent auto-retry, then surface error.
+            clearTimeout(timeoutId);
+            setLoading(false);
+            return generatePlan(retryCount + 1);
+          }
+          if (isTimeout) {
             setError("Request timed out. Our servers are busy — please try again in a moment.");
             track('generation_error', { reason: 'timeout', genre: form.genre });
           } else {
-            if (retryCount < 1) {
-              setLoading(false);
-              generatePlan(retryCount + 1);
-              return;
-            }
             setError("Connection error: " + err.message);
             track('generation_error', { reason: err.message, genre: form.genre });
           }
@@ -378,10 +544,22 @@ Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMP
         }
       };
 
-      const handleNext = () => { if (step < STEPS.length - 1) setStep(s => s + 1); else generatePlan(); };
-      const reset = () => { setStep(0); setForm({ genre: "", title: "", series: "", platform: "", budget: "", timeline: "" }); setPlan(null); setParsedPlan(null); setError(null); };
+      const handleNext = () => {
+        if (step < STEPS.length - 1) setStep(s => s + 1);
+        else generatePlan();
+      };
 
-      const planText = parsedPlan ? Object.entries(parsedPlan).map(([k, v]) => `${k.toUpperCase().replace(/_/g, " ")}\n${v}`).join("\n\n") : plan || "";
+      const reset = () => {
+        setStep(0);
+        setForm(INITIAL_FORM);
+        setPlan(null);
+        setParsedPlan(null);
+        setError(null);
+      };
+
+      const planText = parsedPlan
+        ? Object.entries(parsedPlan).map(([k, v]) => `${k.toUpperCase().replace(/_/g, " ")}\n${v}`).join("\n\n")
+        : (plan || "");
 
       return (
         <div style={{ minHeight: "100vh", background: "#0D0D0F", backgroundImage: "radial-gradient(ellipse at 20% 20%, rgba(232,197,71,0.06) 0%, transparent 60%)", fontFamily: "'Lora', Georgia, serif", padding: "0 16px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
@@ -398,14 +576,65 @@ Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMP
           </div>
 
           <div style={{ width: "100%", maxWidth: 680, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: "36px 32px", animation: "fadeUp 0.7s ease 0.1s both" }}>
+
             {!plan && !parsedPlan && !loading && (
               <>
                 <ProgressBar step={step} />
-                {step === 0 && <div><Label>What genre is your book?</Label><SelectGrid options={GENRES} value={form.genre} onChange={v => { update("genre", v); track('genre_selected', { genre: v }); }} /></div>}
-                {step === 1 && <div><Label>Book details</Label><Input placeholder="Book title *" value={form.title} onChange={e => update("title", e.target.value)} /><Input placeholder="Series name (optional)" value={form.series} onChange={e => update("series", e.target.value)} style={{ marginTop: 12 }} /></div>}
-                {step === 2 && <div><Label>Publishing platform</Label><SelectGrid options={PLATFORMS} value={form.platform} onChange={v => update("platform", v)} /></div>}
-                {step === 3 && <div><Label>Marketing budget</Label><SelectGrid options={BUDGETS} value={form.budget} onChange={v => update("budget", v)} /></div>}
-                {step === 4 && <div><Label>Time until launch</Label><SelectGrid options={TIMELINES} value={form.timeline} onChange={v => update("timeline", v)} /></div>}
+
+                {step === 0 && (
+                  <div>
+                    <Label>What genre is your book?</Label>
+                    <SelectGrid options={GENRES} value={form.genre} onChange={v => { update("genre", v); track('genre_selected', { genre: v }); }} />
+                  </div>
+                )}
+
+                {step === 1 && (
+                  <div>
+                    <Label>Book title</Label>
+                    <Input placeholder="Book title *" value={form.title} onChange={e => update("title", e.target.value)} />
+                    <div style={{ marginTop: 24 }}>
+                      <Label>Where does this book sit?</Label>
+                      <SelectGrid options={SERIES_POSITIONS} value={form.series_position} onChange={v => update("series_position", v)} minWidth={170} />
+                    </div>
+                  </div>
+                )}
+
+                {step === 2 && (
+                  <div>
+                    <Label>How many books have you published?</Label>
+                    <SelectGrid options={EXPERIENCE} value={form.experience} onChange={v => update("experience", v)} minWidth={160} />
+                    <div style={{ marginTop: 24 }}>
+                      <Label>Email list size</Label>
+                      <SelectGrid options={LIST_SIZES} value={form.list_size} onChange={v => update("list_size", v)} minWidth={130} />
+                    </div>
+                    <div style={{ marginTop: 24 }}>
+                      <Label>Other titles in this pen name</Label>
+                      <SelectGrid options={CATALOG_SIZES} value={form.catalog_size} onChange={v => update("catalog_size", v)} minWidth={180} />
+                    </div>
+                  </div>
+                )}
+
+                {step === 3 && (
+                  <div>
+                    <Label>Publishing platform</Label>
+                    <SelectGrid options={PLATFORMS} value={form.platform} onChange={v => update("platform", v)} minWidth={180} />
+                  </div>
+                )}
+
+                {step === 4 && (
+                  <div>
+                    <Label>Marketing budget</Label>
+                    <SelectGrid options={BUDGETS} value={form.budget} onChange={v => update("budget", v)} minWidth={160} />
+                  </div>
+                )}
+
+                {step === 5 && (
+                  <div>
+                    <Label>Time until launch</Label>
+                    <SelectGrid options={TIMELINES} value={form.timeline} onChange={v => update("timeline", v)} />
+                  </div>
+                )}
+
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 36, alignItems: "center" }}>
                   {step > 0 ? <button onClick={() => setStep(s => s - 1)} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", fontFamily: "'Space Mono', monospace", fontSize: 12, cursor: "pointer", letterSpacing: "0.08em" }}>← BACK</button> : <div />}
                   <button onClick={handleNext} disabled={!canNext()} style={{ padding: "14px 32px", borderRadius: 8, background: canNext() ? "#E8C547" : "rgba(255,255,255,0.08)", color: canNext() ? "#0D0D0F" : "rgba(255,255,255,0.25)", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, letterSpacing: "0.12em", cursor: canNext() ? "pointer" : "not-allowed", transition: "all 0.2s", textTransform: "uppercase" }}>
@@ -438,7 +667,7 @@ Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMP
                   <div>
                     <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 6 }}>LAUNCH PLAN READY</div>
                     <h2 style={{ fontFamily: "'Lora', serif", color: "#fff", fontSize: 22, margin: 0, fontWeight: 600 }}>{form.title}</h2>
-                    <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>{form.genre} · {form.platform} · {form.timeline}</div>
+                    <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>{form.genre} · {form.series_position} · {form.platform} · {form.timeline}</div>
                   </div>
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     <CopyButton planText={planText} onCopy={() => track('plan_copied', { genre: form.genre })} />
@@ -450,9 +679,10 @@ Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMP
                 <div className="print-only" style={{ marginBottom: 16 }}>
                   <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#000", letterSpacing: "0.2em", marginBottom: 4 }}>LAUNCH PLAN READY — PRESSREADY.INK</div>
                   <h2 style={{ fontFamily: "'Lora', serif", color: "#000", fontSize: 22, margin: 0, fontWeight: 600 }}>{form.title}</h2>
-                  <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#555", marginTop: 4, marginBottom: 16 }}>{form.genre} · {form.platform} · {form.timeline}</div>
+                  <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#555", marginTop: 4, marginBottom: 16 }}>{form.genre} · {form.series_position} · {form.platform} · {form.timeline}</div>
                 </div>
                 <div className="no-print" style={{ height: 1, background: "rgba(232,197,71,0.2)", marginBottom: 32 }} />
+
                 {parsedPlan && (
                   <>
                     {parsedPlan.executive_summary && (
@@ -461,7 +691,18 @@ Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMP
                         <div style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.9)", lineHeight: 1.7, fontStyle: "italic" }}>{parsedPlan.executive_summary}</div>
                       </div>
                     )}
-                    {[["PRE-LAUNCH CHECKLIST","pre_launch",200],["LAUNCH WEEK TACTICS","launch_week",400],["PRICING STRATEGY","pricing_strategy",600],["REVIEW & ARC STRATEGY","review_strategy",800],["SOCIAL MEDIA PLAN","social_media",1000],["ALGORITHM TRIGGERS","algorithm_tips",1200],["EMAIL LIST BUILDING","email_list",1400],["POST-LAUNCH PLAN","post_launch",1600],["BUDGET BREAKDOWN","budget_breakdown",1800],["SUCCESS METRICS","kpis",2000]].map(([title, key, delay]) =>
+                    {[
+                      ["PRE-LAUNCH CHECKLIST",  "pre_launch",       200],
+                      ["LAUNCH WEEK TACTICS",   "launch_week",      400],
+                      ["PRICING STRATEGY",      "pricing_strategy", 600],
+                      ["REVIEW & ARC STRATEGY", "review_strategy",  800],
+                      ["SOCIAL MEDIA PLAN",     "social_media",     1000],
+                      ["ALGORITHM TRIGGERS",    "algorithm_tips",   1200],
+                      ["EMAIL LIST BUILDING",   "email_list",       1400],
+                      ["POST-LAUNCH PLAN",      "post_launch",      1600],
+                      ["BUDGET BREAKDOWN",      "budget_breakdown", 1800],
+                      ["SUCCESS METRICS",       "kpis",             2000]
+                    ].map(([title, key, delay]) =>
                       parsedPlan[key] ? <PlanSection key={key} title={title} content={parsedPlan[key]} delay={delay} /> : null
                     )}
                     {parsedPlan.pro_tip && (
@@ -472,7 +713,11 @@ Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMP
                     )}
                   </>
                 )}
-                {!parsedPlan && plan && <div style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.85)", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{plan}</div>}
+
+                {!parsedPlan && plan && (
+                  <div style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.85)", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{plan}</div>
+                )}
+
                 <div style={{ marginTop: 40, paddingTop: 24, borderTop: "1px solid rgba(255,255,255,0.08)", textAlign: "center" }}>
                   <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.25)", letterSpacing: "0.15em" }}>POWERED BY PRESSREADY · LAUNCH INTELLIGENCE</div>
                 </div>
@@ -482,6 +727,10 @@ Be SPECIFIC. Tailor everything to the genre, platform, budget, and timeline. IMP
         </div>
       );
     }
+
+    /* ============================================================
+       ERROR BOUNDARY + APP ROOT
+       ============================================================ */
 
     class ErrorBoundary extends React.Component {
       constructor(props) {
