@@ -63,9 +63,10 @@
     // When you switch from sandbox to live, replace this URL with the live one.
     const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/test_4gM14o5qA57747beyD33W00";
 
-    // Local storage key for tracking unlock state.
-    // Bumping this version invalidates all old unlocks (use if you ever need to reset).
+    // Local storage keys for tracking unlock state.
+    // Bumping these versions invalidates all old unlocks (use if you ever need to reset).
     const UNLOCK_STORAGE_KEY = "pressready_unlocked_v1";
+    const UNLOCK_SESSION_KEY = "pressready_session_v1"; // stores the Stripe session_id so backend can re-verify
 
     // Sections that are free for everyone. The rest require unlock.
     // Ordered from most-valuable-as-teaser to less.
@@ -274,14 +275,24 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       }
     }
 
-    function writeStoredUnlock() {
+    function readStoredSession() {
+      try {
+        return localStorage.getItem(UNLOCK_SESSION_KEY) || null;
+      } catch {
+        return null;
+      }
+    }
+
+    function writeStoredUnlock(sessionId) {
       try {
         localStorage.setItem(UNLOCK_STORAGE_KEY, 'true');
+        if (sessionId) localStorage.setItem(UNLOCK_SESSION_KEY, sessionId);
       } catch {}
     }
 
     function useUnlock() {
       const [unlocked, setUnlocked] = useState(() => readStoredUnlock());
+      const [sessionId, setSessionId] = useState(() => readStoredSession());
       const [verifying, setVerifying] = useState(false);
       const [verifyError, setVerifyError] = useState(null);
 
@@ -289,10 +300,10 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       // This is what handles the redirect after a successful payment.
       useEffect(() => {
         const params = new URLSearchParams(window.location.search);
-        const sessionId = params.get('session_id');
+        const urlSessionId = params.get('session_id');
         const unlockedFlag = params.get('unlocked');
 
-        if (!sessionId || !unlockedFlag) return; // nothing to verify
+        if (!urlSessionId || !unlockedFlag) return; // nothing to verify
         if (readStoredUnlock()) {
           // Already unlocked from a previous session; just clean up the URL.
           cleanUrl();
@@ -303,14 +314,15 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
         fetch('/api/verify-payment', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: sessionId })
+          body: JSON.stringify({ session_id: urlSessionId })
         })
           .then(r => r.json())
           .then(data => {
             if (data && data.paid === true) {
-              writeStoredUnlock();
+              writeStoredUnlock(urlSessionId);
               setUnlocked(true);
-              track('unlock_verified', { session_id: sessionId });
+              setSessionId(urlSessionId);
+              track('unlock_verified', { session_id: urlSessionId });
             } else {
               setVerifyError("We couldn't confirm your payment. If you were charged, please contact blackfuegopublishing@proton.me.");
               track('unlock_failed', { reason: data?.error || 'unpaid' });
@@ -326,7 +338,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
           });
       }, []);
 
-      return { unlocked, verifying, verifyError };
+      return { unlocked, sessionId, verifying, verifyError };
     }
 
     // After we've consumed the URL params, scrub them so the user
@@ -617,7 +629,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       timeline: ""
     };
 
-    function Wizard({ onBackToLanding, unlocked, verifying, verifyError }) {
+    function Wizard({ onBackToLanding, unlocked, sessionId, verifying, verifyError }) {
       const [step, setStep] = useState(0);
       const [form, setForm] = useState(INITIAL_FORM);
       const [loading, setLoading] = useState(false);
@@ -650,7 +662,10 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
           const response = await fetch("/api/generate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt }),
+            body: JSON.stringify({
+              prompt,
+              unlock_session_id: unlocked && sessionId ? sessionId : undefined
+            }),
             signal: controller.signal
           });
           const data = await response.json();
@@ -987,7 +1002,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
 
     function App() {
       const [view, setView] = useState('landing');
-      const { unlocked, verifying, verifyError } = useUnlock();
+      const { unlocked, sessionId, verifying, verifyError } = useUnlock();
 
       // If the user lands on /?session_id=... they came from Stripe — go straight
       // to the wizard view rather than the landing page so they see the unlocked banner.
@@ -1000,7 +1015,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
 
       return view === 'landing'
         ? <Landing onStart={() => setView('wizard')} />
-        : <Wizard onBackToLanding={() => setView('landing')} unlocked={unlocked} verifying={verifying} verifyError={verifyError} />;
+        : <Wizard onBackToLanding={() => setView('landing')} unlocked={unlocked} sessionId={sessionId} verifying={verifying} verifyError={verifyError} />;
     }
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
