@@ -4,15 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PressReady · Launch Intelligence</title>
-  <meta name="description" content="AI-generated book launch plans built by an indie press with 35 books across 7 pen names. Tailored to your book, budget, and timeline. Free." />
+  <meta name="description" content="AI-generated book launch plans built by an indie press with 35 books across 7 pen names. Tailored to your book, budget, and timeline." />
   <!-- Open Graph -->
   <meta property="og:title" content="PressReady · Launch Intelligence" />
-  <meta property="og:description" content="Get a full book launch plan in 60 seconds. Built by an indie press with 35 books across 7 pen names. Free, no signup required." />
+  <meta property="og:description" content="Get a full book launch plan in 60 seconds. Built by an indie press with 35 books across 7 pen names." />
   <meta property="og:url" content="https://pressready.ink" />
   <meta property="og:type" content="website" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="PressReady · Launch Intelligence" />
-  <meta name="twitter:description" content="Get a full book launch plan in 60 seconds. Free, no signup." />
+  <meta name="twitter:description" content="Get a full book launch plan in 60 seconds." />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='12' fill='%230D0D0F'/><text y='72' x='50' text-anchor='middle' font-size='60' font-family='Georgia,serif' fill='%23E8C547'>P</text></svg>" />
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-QDYVPWPDWD"></script>
@@ -58,6 +58,23 @@
        CONFIG — all constants in one place so you can tune without
        hunting through the file.
        ============================================================ */
+
+    // Stripe Payment Link for the $19 lifetime unlock.
+    // When you switch from sandbox to live, replace this URL with the live one.
+    const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/test_4gM14o5qA57747beyD33W00";
+
+    // Local storage key for tracking unlock state.
+    // Bumping this version invalidates all old unlocks (use if you ever need to reset).
+    const UNLOCK_STORAGE_KEY = "pressready_unlocked_v1";
+
+    // Sections that are free for everyone. The rest require unlock.
+    // Ordered from most-valuable-as-teaser to less.
+    const FREE_SECTION_KEYS = new Set([
+      "executive_summary",
+      "pre_launch",
+      "launch_week",
+      "pricing_strategy"
+    ]);
 
     const STEPS = [
       { id: "genre",      label: "Genre" },
@@ -205,13 +222,10 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
        UTILITIES — small focused helpers.
        ============================================================ */
 
-    // Single tracking helper. Replaces scattered `if (typeof gtag !== 'undefined')`.
     function track(eventName, params = {}) {
       if (typeof gtag !== 'undefined') gtag('event', eventName, params);
     }
 
-    // Defensive JSON cleanup. Models sometimes wrap in fences, add preamble,
-    // or trail with explanation. This finds the outermost {...} reliably.
     function extractJSON(raw) {
       if (!raw) return null;
       const stripped = raw.replace(/```json|```/g, "").trim();
@@ -226,7 +240,6 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       }
     }
 
-    // Required keys for a valid plan. If any are missing, we know to flag.
     const REQUIRED_PLAN_KEYS = [
       "executive_summary", "pre_launch", "launch_week", "pricing_strategy",
       "review_strategy", "social_media", "algorithm_tips", "email_list",
@@ -240,7 +253,95 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
     }
 
     /* ============================================================
-       PRESENTATIONAL COMPONENTS — visual layer, no logic.
+       UNLOCK STATE — handles the freemium gate.
+
+       Three ways a user becomes "unlocked":
+       1. Returns from Stripe with ?session_id=cs_test_xxx in URL
+          → we verify with Stripe via /api/verify-payment
+          → if paid, write to localStorage so they stay unlocked
+       2. Already has the localStorage flag from a previous unlock
+       3. (Future) admin grants a manual unlock code
+
+       Until the user is unlocked, the FREE_SECTION_KEYS render fully
+       and the rest render as a PaywallCard prompting the upgrade.
+       ============================================================ */
+
+    function readStoredUnlock() {
+      try {
+        return localStorage.getItem(UNLOCK_STORAGE_KEY) === 'true';
+      } catch {
+        return false;
+      }
+    }
+
+    function writeStoredUnlock() {
+      try {
+        localStorage.setItem(UNLOCK_STORAGE_KEY, 'true');
+      } catch {}
+    }
+
+    function useUnlock() {
+      const [unlocked, setUnlocked] = useState(() => readStoredUnlock());
+      const [verifying, setVerifying] = useState(false);
+      const [verifyError, setVerifyError] = useState(null);
+
+      // On mount, check the URL for ?session_id= and verify with Stripe.
+      // This is what handles the redirect after a successful payment.
+      useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const sessionId = params.get('session_id');
+        const unlockedFlag = params.get('unlocked');
+
+        if (!sessionId || !unlockedFlag) return; // nothing to verify
+        if (readStoredUnlock()) {
+          // Already unlocked from a previous session; just clean up the URL.
+          cleanUrl();
+          return;
+        }
+
+        setVerifying(true);
+        fetch('/api/verify-payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionId })
+        })
+          .then(r => r.json())
+          .then(data => {
+            if (data && data.paid === true) {
+              writeStoredUnlock();
+              setUnlocked(true);
+              track('unlock_verified', { session_id: sessionId });
+            } else {
+              setVerifyError("We couldn't confirm your payment. If you were charged, please contact blackfuegopublishing@proton.me.");
+              track('unlock_failed', { reason: data?.error || 'unpaid' });
+            }
+          })
+          .catch(err => {
+            setVerifyError("Connection error verifying payment: " + err.message);
+            track('unlock_failed', { reason: 'fetch_error' });
+          })
+          .finally(() => {
+            setVerifying(false);
+            cleanUrl();
+          });
+      }, []);
+
+      return { unlocked, verifying, verifyError };
+    }
+
+    // After we've consumed the URL params, scrub them so the user
+    // can refresh without re-triggering verification.
+    function cleanUrl() {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('session_id');
+        url.searchParams.delete('unlocked');
+        window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ''));
+      } catch {}
+    }
+
+    /* ============================================================
+       PRESENTATIONAL COMPONENTS
        ============================================================ */
 
     function Landing({ onStart }) {
@@ -263,7 +364,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
                 <button onClick={onStart} style={{ padding: "18px 40px", borderRadius: 10, background: "#E8C547", color: "#0D0D0F", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 13, fontWeight: 700, letterSpacing: "0.14em", cursor: "pointer", textTransform: "uppercase", animation: "glow 3s ease-in-out infinite" }}>
                   Generate Your Plan →
                 </button>
-                <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.4)", letterSpacing: "0.08em" }}>Free · No signup · 60 seconds</span>
+                <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.4)", letterSpacing: "0.08em" }}>Free preview · No signup · 60 seconds</span>
               </div>
             </div>
             <div style={{ height: 1, background: "linear-gradient(90deg, transparent, rgba(232,197,71,0.3), transparent)", margin: "40px 0 60px", animation: "fadeIn 1s ease 0.6s both" }} />
@@ -379,6 +480,63 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       );
     }
 
+    // Renders in place of a locked section. Shows a teaser, the section title,
+    // and a single "Unlock Full Plan" button that goes to Stripe.
+    // Only the FIRST locked section in a plan shows the full upgrade card;
+    // subsequent ones show a slim "locked" indicator to avoid 8 paywall cards stacked.
+    function PaywallCard({ title, isPrimary = false, delay = 0 }) {
+      const [visible, setVisible] = useState(false);
+      useEffect(() => { const t = setTimeout(() => setVisible(true), delay); return () => clearTimeout(t); }, []);
+
+      const handleUnlock = () => {
+        track('unlock_clicked', { from_section: title });
+        window.location.href = STRIPE_PAYMENT_LINK;
+      };
+
+      if (!isPrimary) {
+        // Slim locked indicator for non-primary locked sections
+        return (
+          <div style={{ opacity: visible ? 1 : 0, transition: "opacity 0.5s ease", marginBottom: 16, borderLeft: "3px solid rgba(232,197,71,0.25)", paddingLeft: 18, paddingTop: 4, paddingBottom: 4 }}>
+            <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(232,197,71,0.5)", letterSpacing: "0.15em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 13 }}>🔒</span>
+              {title}
+              <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", letterSpacing: "0.1em" }}>— UNLOCK TO VIEW</span>
+            </div>
+          </div>
+        );
+      }
+
+      // Primary upgrade card — full pitch and CTA
+      return (
+        <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(16px)", transition: "all 0.5s ease", marginBottom: 28, marginTop: 16, padding: "32px 28px", background: "linear-gradient(135deg, rgba(232,197,71,0.08), rgba(232,197,71,0.02))", border: "1.5px solid rgba(232,197,71,0.4)", borderRadius: 14 }}>
+          <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 14 }}>
+            🔒 8 SECTIONS LOCKED
+          </div>
+          <h3 style={{ fontFamily: "'Lora', serif", fontSize: 26, color: "#fff", fontWeight: 600, marginBottom: 12, lineHeight: 1.25 }}>
+            Unlock the rest of your plan.
+          </h3>
+          <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.75)", lineHeight: 1.7, marginBottom: 22 }}>
+            You've seen the strategy overview, pre-launch checklist, launch week tactics, and pricing strategy. The remaining 8 sections — review &amp; ARC strategy, social media plan, algorithm triggers, email list building, post-launch plan, budget breakdown, success metrics, and the Elite Insider Tip — are part of the full plan.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 26 }}>
+            {["Review & ARC Strategy","Social Media Plan","Algorithm Triggers","Email List Building","Post-Launch Plan","Budget Breakdown","Success Metrics","Elite Insider Tip"].map(s => (
+              <div key={s} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(232,197,71,0.15)", borderRadius: 6, padding: "10px 12px", fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.6)", letterSpacing: "0.05em" }}>
+                🔒 {s}
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+            <button onClick={handleUnlock} style={{ padding: "16px 36px", borderRadius: 10, background: "#E8C547", color: "#0D0D0F", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", cursor: "pointer", textTransform: "uppercase" }}>
+              Unlock Full Plan — $19
+            </button>
+            <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: "0.08em" }}>
+              Lifetime access · No subscription · Generate unlimited plans
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     function Label({ children }) {
       return <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 16 }}>{children}</div>;
     }
@@ -424,14 +582,14 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       const handleShare = () => {
         const shareData = {
           title: "PressReady · Launch Intelligence",
-          text: "Just got my full book launch plan from PressReady — free tool built by an indie press with 35 books. No signup needed.",
+          text: "Just got my book launch plan from PressReady — built by an indie press with 35 books. pressready.ink",
           url: "https://pressready.ink"
         };
         const flagShared = () => { setShared(true); setTimeout(() => setShared(false), 2000); };
         if (navigator.share) {
           navigator.share(shareData).catch(() => {});
         } else if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText("Just got my full book launch plan from PressReady — free tool built by an indie press. pressready.ink").then(flagShared).catch(flagShared);
+          navigator.clipboard.writeText("Just got my book launch plan from PressReady — built by an indie press. pressready.ink").then(flagShared).catch(flagShared);
         } else {
           flagShared();
         }
@@ -450,7 +608,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
     const INITIAL_FORM = {
       genre: "",
       title: "",
-      series_position: "",  // empty so user must actively pick; canNext() enforces it
+      series_position: "",
       experience: "",
       list_size: "",
       catalog_size: "",
@@ -459,17 +617,16 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       timeline: ""
     };
 
-    function Wizard({ onBackToLanding }) {
+    function Wizard({ onBackToLanding, unlocked, verifying, verifyError }) {
       const [step, setStep] = useState(0);
       const [form, setForm] = useState(INITIAL_FORM);
       const [loading, setLoading] = useState(false);
-      const [plan, setPlan] = useState(null);          // raw fallback if JSON parsing fails
+      const [plan, setPlan] = useState(null);
       const [parsedPlan, setParsedPlan] = useState(null);
       const [error, setError] = useState(null);
 
       const update = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
-      // Validation per step. Single source of truth — used by the Next button.
       const canNext = () => {
         switch (step) {
           case 0: return !!form.genre;
@@ -517,17 +674,16 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
               series_position: form.series_position,
               platform: form.platform,
               valid,
-              missing_count: missing.length
+              missing_count: missing.length,
+              unlocked
             });
           } else {
-            // Couldn't parse — show raw text as fallback.
             setPlan(raw);
             track('plan_generated_unparsed', { genre: form.genre });
           }
         } catch (err) {
           const isTimeout = err.name === 'AbortError';
           if (retryCount < 1) {
-            // One silent auto-retry, then surface error.
             clearTimeout(timeoutId);
             setLoading(false);
             return generatePlan(retryCount + 1);
@@ -558,15 +714,59 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
         setError(null);
       };
 
+      // For copy-to-clipboard: only include unlocked content.
       const planText = parsedPlan
-        ? Object.entries(parsedPlan).map(([k, v]) => `${k.toUpperCase().replace(/_/g, " ")}\n${v}`).join("\n\n")
+        ? Object.entries(parsedPlan)
+            .filter(([k]) => unlocked || FREE_SECTION_KEYS.has(k))
+            .map(([k, v]) => `${k.toUpperCase().replace(/_/g, " ")}\n${v}`)
+            .join("\n\n")
         : (plan || "");
+
+      // Section render plan: which sections to show, in what order, gated by unlock state.
+      // Returns: array of { type: 'section' | 'paywall_primary' | 'paywall_slim', title, key, delay }
+      const renderPlan = () => {
+        const ordered = [
+          ["PRE-LAUNCH CHECKLIST",  "pre_launch",       200],
+          ["LAUNCH WEEK TACTICS",   "launch_week",      400],
+          ["PRICING STRATEGY",      "pricing_strategy", 600],
+          ["REVIEW & ARC STRATEGY", "review_strategy",  800],
+          ["SOCIAL MEDIA PLAN",     "social_media",     1000],
+          ["ALGORITHM TRIGGERS",    "algorithm_tips",   1200],
+          ["EMAIL LIST BUILDING",   "email_list",       1400],
+          ["POST-LAUNCH PLAN",      "post_launch",      1600],
+          ["BUDGET BREAKDOWN",      "budget_breakdown", 1800],
+          ["SUCCESS METRICS",       "kpis",             2000]
+        ];
+
+        const items = [];
+        let primaryPaywallShown = false;
+
+        for (const [title, key, delay] of ordered) {
+          const isFree = FREE_SECTION_KEYS.has(key);
+          if (unlocked || isFree) {
+            if (parsedPlan[key]) {
+              items.push({ type: 'section', title, key, delay });
+            }
+          } else {
+            if (!primaryPaywallShown) {
+              items.push({ type: 'paywall_primary', title, key, delay });
+              primaryPaywallShown = true;
+            } else {
+              items.push({ type: 'paywall_slim', title, key, delay });
+            }
+          }
+        }
+        return items;
+      };
 
       return (
         <div style={{ minHeight: "100vh", background: "#0D0D0F", backgroundImage: "radial-gradient(ellipse at 20% 20%, rgba(232,197,71,0.06) 0%, transparent 60%)", fontFamily: "'Lora', Georgia, serif", padding: "0 16px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
           <div className="no-print" style={{ width: "100%", maxWidth: 680, paddingTop: 32, marginBottom: 32, animation: "fadeUp 0.6s ease both", display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 16 }}>
             <div>
-              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.3em", textTransform: "uppercase", marginBottom: 12, opacity: 0.8 }}>PressReady · Launch Intelligence</div>
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.3em", textTransform: "uppercase", marginBottom: 12, opacity: 0.8 }}>
+                PressReady · Launch Intelligence
+                {unlocked && <span style={{ marginLeft: 12, color: "rgba(232,197,71,0.6)", fontSize: 9 }}>· FULL ACCESS</span>}
+              </div>
               <h1 style={{ fontSize: "clamp(28px, 5vw, 44px)", fontWeight: 600, color: "#FFFFFF", margin: 0, lineHeight: 1.15, fontFamily: "'Lora', Georgia, serif" }}>
                 Press<span style={{ fontStyle: "italic", color: "#E8C547" }}>Ready</span>
               </h1>
@@ -575,6 +775,26 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
               <button onClick={onBackToLanding} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.5)", padding: "8px 16px", borderRadius: 6, fontFamily: "'Space Mono', monospace", fontSize: 10, letterSpacing: "0.12em", cursor: "pointer", textTransform: "uppercase" }}>← Home</button>
             )}
           </div>
+
+          {/* Verification banner: shown briefly when user returns from Stripe */}
+          {verifying && (
+            <div className="no-print" style={{ width: "100%", maxWidth: 680, marginBottom: 16, padding: "14px 20px", background: "rgba(232,197,71,0.08)", border: "1px solid rgba(232,197,71,0.3)", borderRadius: 10, fontFamily: "'Space Mono', monospace", fontSize: 12, color: "#E8C547", letterSpacing: "0.08em", textAlign: "center" }}>
+              VERIFYING YOUR PAYMENT...
+            </div>
+          )}
+
+          {verifyError && (
+            <div className="no-print" style={{ width: "100%", maxWidth: 680, marginBottom: 16, padding: "14px 20px", background: "rgba(255,107,107,0.08)", border: "1px solid rgba(255,107,107,0.3)", borderRadius: 10, fontFamily: "'Space Mono', monospace", fontSize: 12, color: "#ff8a8a", letterSpacing: "0.04em", lineHeight: 1.6 }}>
+              {verifyError}
+            </div>
+          )}
+
+          {/* Unlocked confirmation banner: shown after successful verification */}
+          {unlocked && !verifying && (plan || parsedPlan) && (
+            <div className="no-print" style={{ width: "100%", maxWidth: 680, marginBottom: 16, padding: "14px 20px", background: "rgba(232,197,71,0.08)", border: "1px solid rgba(232,197,71,0.3)", borderRadius: 10, fontFamily: "'Space Mono', monospace", fontSize: 12, color: "#E8C547", letterSpacing: "0.08em", textAlign: "center" }}>
+              ✓ FULL PLAN UNLOCKED · LIFETIME ACCESS
+            </div>
+          )}
 
           <div style={{ width: "100%", maxWidth: 680, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: "36px 32px", animation: "fadeUp 0.7s ease 0.1s both" }}>
 
@@ -666,19 +886,23 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
               <div className="print-plan" style={{ animation: "fadeUp 0.5s ease both" }}>
                 <div className="no-print" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 32, flexWrap: "wrap", gap: 12 }}>
                   <div>
-                    <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 6 }}>LAUNCH PLAN READY</div>
+                    <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 6 }}>
+                      LAUNCH PLAN {unlocked ? "READY" : "PREVIEW"}
+                    </div>
                     <h2 style={{ fontFamily: "'Lora', serif", color: "#fff", fontSize: 22, margin: 0, fontWeight: 600 }}>{form.title}</h2>
                     <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>{form.genre} · {form.series_position} · {form.platform} · {form.timeline}</div>
                   </div>
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <CopyButton planText={planText} onCopy={() => track('plan_copied', { genre: form.genre })} />
+                    <CopyButton planText={planText} onCopy={() => track('plan_copied', { genre: form.genre, unlocked })} />
                     <ShareButton />
-                    <button onClick={() => { track('plan_downloaded', { genre: form.genre }); window.print(); }} style={{ padding: "12px 20px", borderRadius: 6, border: "1.5px solid rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.6)", fontFamily: "'Space Mono', monospace", fontSize: 11, cursor: "pointer" }}>SAVE PDF</button>
+                    {unlocked && (
+                      <button onClick={() => { track('plan_downloaded', { genre: form.genre }); window.print(); }} style={{ padding: "12px 20px", borderRadius: 6, border: "1.5px solid rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.6)", fontFamily: "'Space Mono', monospace", fontSize: 11, cursor: "pointer" }}>SAVE PDF</button>
+                    )}
                     <button onClick={reset} style={{ padding: "12px 20px", borderRadius: 6, border: "1.5px solid rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.5)", fontFamily: "'Space Mono', monospace", fontSize: 11, cursor: "pointer" }}>NEW PLAN</button>
                   </div>
                 </div>
                 <div className="print-only" style={{ marginBottom: 16 }}>
-                  <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#000", letterSpacing: "0.2em", marginBottom: 4 }}>LAUNCH PLAN READY — PRESSREADY.INK</div>
+                  <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#000", letterSpacing: "0.2em", marginBottom: 4 }}>LAUNCH PLAN — PRESSREADY.INK</div>
                   <h2 style={{ fontFamily: "'Lora', serif", color: "#000", fontSize: 22, margin: 0, fontWeight: 600 }}>{form.title}</h2>
                   <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#555", marginTop: 4, marginBottom: 16 }}>{form.genre} · {form.series_position} · {form.platform} · {form.timeline}</div>
                 </div>
@@ -686,27 +910,27 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
 
                 {parsedPlan && (
                   <>
+                    {/* Strategy Overview is always free */}
                     {parsedPlan.executive_summary && (
                       <div style={{ background: "rgba(232,197,71,0.08)", border: "1px solid rgba(232,197,71,0.2)", borderRadius: 10, padding: "18px 20px", marginBottom: 28 }}>
                         <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.15em", marginBottom: 8 }}>STRATEGY OVERVIEW</div>
                         <div style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.9)", lineHeight: 1.7, fontStyle: "italic" }}>{parsedPlan.executive_summary}</div>
                       </div>
                     )}
-                    {[
-                      ["PRE-LAUNCH CHECKLIST",  "pre_launch",       200],
-                      ["LAUNCH WEEK TACTICS",   "launch_week",      400],
-                      ["PRICING STRATEGY",      "pricing_strategy", 600],
-                      ["REVIEW & ARC STRATEGY", "review_strategy",  800],
-                      ["SOCIAL MEDIA PLAN",     "social_media",     1000],
-                      ["ALGORITHM TRIGGERS",    "algorithm_tips",   1200],
-                      ["EMAIL LIST BUILDING",   "email_list",       1400],
-                      ["POST-LAUNCH PLAN",      "post_launch",      1600],
-                      ["BUDGET BREAKDOWN",      "budget_breakdown", 1800],
-                      ["SUCCESS METRICS",       "kpis",             2000]
-                    ].map(([title, key, delay]) =>
-                      parsedPlan[key] ? <PlanSection key={key} title={title} content={parsedPlan[key]} delay={delay} /> : null
-                    )}
-                    {parsedPlan.pro_tip && (
+
+                    {/* Render the body sections — each is either a real section or a paywall */}
+                    {renderPlan().map(item => {
+                      if (item.type === 'section') {
+                        return <PlanSection key={item.key} title={item.title} content={parsedPlan[item.key]} delay={item.delay} />;
+                      }
+                      if (item.type === 'paywall_primary') {
+                        return <PaywallCard key={item.key} title={item.title} isPrimary={true} delay={item.delay} />;
+                      }
+                      return <PaywallCard key={item.key} title={item.title} isPrimary={false} delay={item.delay} />;
+                    })}
+
+                    {/* Pro tip is paid-only */}
+                    {unlocked && parsedPlan.pro_tip && (
                       <div style={{ background: "rgba(232,197,71,0.06)", border: "1.5px solid rgba(232,197,71,0.35)", borderRadius: 10, padding: "20px 22px", marginTop: 8 }}>
                         <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.15em", marginBottom: 10 }}>✦ ELITE INSIDER TIP</div>
                         <div style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.9)", lineHeight: 1.75 }}>{parsedPlan.pro_tip}</div>
@@ -763,9 +987,20 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
 
     function App() {
       const [view, setView] = useState('landing');
+      const { unlocked, verifying, verifyError } = useUnlock();
+
+      // If the user lands on /?session_id=... they came from Stripe — go straight
+      // to the wizard view rather than the landing page so they see the unlocked banner.
+      useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('session_id')) {
+          setView('wizard');
+        }
+      }, []);
+
       return view === 'landing'
         ? <Landing onStart={() => setView('wizard')} />
-        : <Wizard onBackToLanding={() => setView('landing')} />;
+        : <Wizard onBackToLanding={() => setView('landing')} unlocked={unlocked} verifying={verifying} verifyError={verifyError} />;
     }
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
