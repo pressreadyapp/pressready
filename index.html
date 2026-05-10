@@ -367,7 +367,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
     }
 
     // ── Presentational components ─────────────────────────────────────────────
-    function Landing({ onStart }) {
+    function Landing({ onStart, onDashboard, proState }) {
       return (
         <div style={{ minHeight: "100vh", background: "#0D0D0F", backgroundImage: "radial-gradient(ellipse at 30% 0%, rgba(232,197,71,0.08) 0%, transparent 55%), radial-gradient(ellipse at 80% 90%, rgba(232,197,71,0.04) 0%, transparent 50%)", color: "#fff", fontFamily: "'Lora', Georgia, serif", padding: "0 16px 80px" }}>
           <div style={{ maxWidth: 920, margin: "0 auto" }}>
@@ -388,6 +388,11 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
                   Generate Your Plan →
                 </button>
                 <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.4)", letterSpacing: "0.08em" }}>Free preview · No signup · 60 seconds</span>
+                {proState && proState.isPro && (
+                  <button onClick={onDashboard} style={{ padding: "18px 28px", borderRadius: 10, background: "transparent", color: "#E8C547", border: "1.5px solid rgba(232,197,71,0.4)", fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, letterSpacing: "0.12em", cursor: "pointer", textTransform: "uppercase" }}>
+                    MY DASHBOARD →
+                  </button>
+                )}
               </div>
             </div>
             <div style={{ height: 1, background: "linear-gradient(90deg, transparent, rgba(232,197,71,0.3), transparent)", margin: "40px 0 60px", animation: "fadeIn 1s ease 0.6s both" }} />
@@ -556,7 +561,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
     // ── Wizard ────────────────────────────────────────────────────────────────
     const INITIAL_FORM = { genre: "", title: "", series_position: "", experience: "", list_size: "", catalog_size: "", platform: "", budget: "", timeline: "" };
 
-    function Wizard({ onBackToLanding, proState, onProVerified }) {
+    function Wizard({ onBackToLanding, onDashboard, proState, onProVerified }) {
       const [step, setStep] = useState(0);
       const [form, setForm] = useState(INITIAL_FORM);
       const [loading, setLoading] = useState(false);
@@ -564,8 +569,24 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       const [parsedPlan, setParsedPlan] = useState(null);
       const [error, setError] = useState(null);
       const [showVerifyModal, setShowVerifyModal] = useState(false);
+      const [showLaunchDateModal, setShowLaunchDateModal] = useState(false);
+      const [planSaved, setPlanSaved] = useState(false);
 
       const isPro = proState.isPro;
+
+      const savePlan = async (launchDate) => {
+        if (!proState.token || !parsedPlan) return;
+        try {
+          await fetch('/api/save-plan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pro_token: proState.token, plan_data: parsedPlan, form, launch_date: launchDate || null })
+          });
+          setPlanSaved(true);
+        } catch {}
+        setShowLaunchDateModal(false);
+      };
+
       const update = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
       const canNext = () => {
@@ -611,6 +632,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
             const { valid, missing } = validatePlan(parsed);
             setParsedPlan(parsed);
             track('plan_generated', { genre: form.genre, experience: form.experience, isPro, valid, missing_count: missing.length });
+            if (isPro) setShowLaunchDateModal(true);
           } else {
             setPlan(raw);
             track('plan_generated_unparsed', { genre: form.genre });
@@ -673,6 +695,12 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
             <VerifyModal
               onSuccess={(token, email) => { onProVerified(token, email); setShowVerifyModal(false); }}
               onClose={() => setShowVerifyModal(false)}
+            />
+          )}
+          {showLaunchDateModal && (
+            <LaunchDateModal
+              onSave={(date) => savePlan(date)}
+              onSkip={() => setShowLaunchDateModal(false)}
             />
           )}
 
@@ -743,6 +771,12 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
                     {isPro && (
                       <button onClick={() => { track('plan_downloaded', { genre: form.genre }); window.print(); }} style={{ padding: "12px 20px", borderRadius: 6, border: "1.5px solid rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.6)", fontFamily: "'Space Mono', monospace", fontSize: 11, cursor: "pointer" }}>SAVE PDF</button>
                     )}
+                    {isPro && planSaved && (
+                      <button onClick={onDashboard} style={{ padding: "12px 20px", borderRadius: 6, border: "1.5px solid rgba(232,197,71,0.4)", background: "rgba(232,197,71,0.08)", color: "#E8C547", fontFamily: "'Space Mono', monospace", fontSize: 11, cursor: "pointer" }}>VIEW DASHBOARD →</button>
+                    )}
+                    {isPro && !planSaved && parsedPlan && (
+                      <button onClick={() => setShowLaunchDateModal(true)} style={{ padding: "12px 20px", borderRadius: 6, border: "1.5px solid rgba(232,197,71,0.3)", background: "transparent", color: "rgba(232,197,71,0.6)", fontFamily: "'Space Mono', monospace", fontSize: 11, cursor: "pointer" }}>SAVE TO DASHBOARD</button>
+                    )}
                     <button onClick={reset} style={{ padding: "12px 20px", borderRadius: 6, border: "1.5px solid rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.5)", fontFamily: "'Space Mono', monospace", fontSize: 11, cursor: "pointer" }}>NEW PLAN</button>
                   </div>
                 </div>
@@ -809,6 +843,178 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       }
     }
 
+    // ── Launch Date Modal ─────────────────────────────────────────────────────
+    function LaunchDateModal({ onSave, onSkip }) {
+      const [date, setDate] = useState('');
+      const today = new Date().toISOString().split('T')[0];
+      return (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "16px" }}>
+          <div style={{ background: "#141416", border: "1.5px solid rgba(232,197,71,0.3)", borderRadius: 16, padding: "36px 32px", maxWidth: 420, width: "100%", animation: "modalIn 0.25s ease" }}>
+            <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 16 }}>SAVE TO DASHBOARD</div>
+            <h3 style={{ fontFamily: "'Lora', serif", fontSize: 22, color: "#fff", fontWeight: 600, marginBottom: 10 }}>When is your launch date?</h3>
+            <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.6)", lineHeight: 1.7, marginBottom: 24 }}>Set a launch date and we'll track your countdown, phase, and daily action items on your dashboard.</p>
+            <input type="date" min={today} value={date} onChange={e => setDate(e.target.value)}
+              style={{ width: "100%", padding: "13px 16px", background: "rgba(255,255,255,0.06)", border: "1.5px solid rgba(255,255,255,0.15)", borderRadius: 8, color: "#fff", fontFamily: "'Space Mono', monospace", fontSize: 14, marginBottom: 16, colorScheme: "dark" }} />
+            <button onClick={() => onSave(date || null)} style={{ width: "100%", padding: "14px", borderRadius: 8, background: "#E8C547", color: "#0D0D0F", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, letterSpacing: "0.12em", cursor: "pointer", textTransform: "uppercase", marginBottom: 10 }}>
+              SAVE TO DASHBOARD →
+            </button>
+            <button onClick={onSkip} style={{ width: "100%", padding: "10px", borderRadius: 8, background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.4)", fontFamily: "'Space Mono', monospace", fontSize: 11, cursor: "pointer" }}>
+              SKIP FOR NOW
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Dashboard ─────────────────────────────────────────────────────────────
+    function Dashboard({ proState, onNewPlan, onBackToLanding }) {
+      const [plans, setPlans] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [selectedPlan, setSelectedPlan] = useState(null);
+
+      useEffect(() => {
+        if (!proState.token) { setLoading(false); return; }
+        fetch('/api/get-plans', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pro_token: proState.token })
+        })
+          .then(r => r.json())
+          .then(data => { setPlans(data.plans || []); setLoading(false); })
+          .catch(() => setLoading(false));
+      }, []);
+
+      function daysUntilLaunch(launchDate) {
+        if (!launchDate) return null;
+        const today = new Date(); today.setHours(0,0,0,0);
+        const launch = new Date(launchDate); launch.setHours(0,0,0,0);
+        return Math.ceil((launch - today) / (1000 * 60 * 60 * 24));
+      }
+
+      function getPhase(days) {
+        if (days === null) return { label: 'NO DATE SET', color: 'rgba(255,255,255,0.3)' };
+        if (days > 14) return { label: 'PRE-LAUNCH', color: '#E8C547' };
+        if (days > 0) return { label: 'LAUNCH WEEK', color: '#ff9f43' };
+        if (days === 0) return { label: 'LAUNCH DAY', color: '#ee5a24' };
+        if (days > -30) return { label: 'POST-LAUNCH', color: '#26de81' };
+        return { label: 'COMPLETE', color: 'rgba(255,255,255,0.3)' };
+      }
+
+      function getTodayTasks(plan, days) {
+        if (!plan || days === null) return ['• Set a launch date to see your daily tasks'];
+        const pd = plan.plan_data;
+        if (days > 14) {
+          return (pd.pre_launch || '').split('\n').filter(l => l.trim().startsWith('•')).slice(0, 3);
+        }
+        if (days >= 0 && days <= 7) {
+          const dayNum = 7 - days + 1;
+          const lines = (pd.launch_week || '').split('\n');
+          const dayLine = lines.find(l => l.startsWith(`Day ${dayNum}:`));
+          return dayLine ? [dayLine] : ['• Execute today\'s launch week tactic'];
+        }
+        if (days < 0 && days > -30) {
+          const phase = Math.abs(days) <= 10 ? 0 : Math.abs(days) <= 20 ? 1 : 2;
+          const phases = (pd.post_launch || '').split('\n\n');
+          return (phases[phase] || '').split('\n').filter(l => l.trim().startsWith('•')).slice(0, 2);
+        }
+        return ['• Your launch is complete — plan your next book'];
+      }
+
+      if (selectedPlan) {
+        const days = daysUntilLaunch(selectedPlan.launch_date);
+        const phase = getPhase(days);
+        const tasks = getTodayTasks(selectedPlan, days);
+        const pd = selectedPlan.plan_data;
+        return (
+          <div style={{ minHeight: "100vh", background: "#0D0D0F", padding: "0 16px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div style={{ width: "100%", maxWidth: 680, paddingTop: 32, marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+              <div>
+                <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.3em", marginBottom: 8 }}>PRESSREADY · PRO · LAUNCH DASHBOARD</div>
+                <h1 style={{ fontFamily: "'Lora', serif", fontSize: 28, color: "#fff", fontWeight: 600 }}>{selectedPlan.title}</h1>
+                <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>{selectedPlan.genre} · {selectedPlan.platform}</div>
+              </div>
+              <button onClick={() => setSelectedPlan(null)} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.5)", padding: "8px 16px", borderRadius: 6, fontFamily: "'Space Mono', monospace", fontSize: 10, cursor: "pointer" }}>← BACK</button>
+            </div>
+            <div style={{ width: "100%", maxWidth: 680, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
+              <div style={{ background: "rgba(232,197,71,0.08)", border: "1px solid rgba(232,197,71,0.25)", borderRadius: 12, padding: "20px 24px" }}>
+                <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.15em", marginBottom: 8 }}>DAYS UNTIL LAUNCH</div>
+                <div style={{ fontFamily: "'Lora', serif", fontSize: 48, color: "#E8C547", fontWeight: 600, lineHeight: 1 }}>{days === null ? '—' : days === 0 ? 'TODAY' : Math.abs(days)}</div>
+                {days !== null && days !== 0 && <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>{days < 0 ? 'DAYS SINCE LAUNCH' : 'DAYS REMAINING'}</div>}
+              </div>
+              <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: "20px 24px" }}>
+                <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.15em", marginBottom: 8 }}>CURRENT PHASE</div>
+                <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 18, color: phase.color, fontWeight: 700 }}>{phase.label}</div>
+                {selectedPlan.launch_date && <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 8 }}>LAUNCH: {new Date(selectedPlan.launch_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>}
+              </div>
+            </div>
+            <div style={{ width: "100%", maxWidth: 680, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: "24px", marginBottom: 20 }}>
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.15em", marginBottom: 16 }}>TODAY'S FOCUS</div>
+              {tasks.map((t, i) => <div key={i} style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.85)", lineHeight: 1.7, marginBottom: 8 }}>{t}</div>)}
+            </div>
+            {[["STRATEGY OVERVIEW",pd.executive_summary],["PRE-LAUNCH CHECKLIST",pd.pre_launch],["LAUNCH WEEK TACTICS",pd.launch_week],["PRICING STRATEGY",pd.pricing_strategy],["REVIEW & ARC STRATEGY",pd.review_strategy],["SOCIAL MEDIA PLAN",pd.social_media],["ALGORITHM TRIGGERS",pd.algorithm_tips],["EMAIL LIST BUILDING",pd.email_list],["POST-LAUNCH PLAN",pd.post_launch],["BUDGET BREAKDOWN",pd.budget_breakdown],["SUCCESS METRICS",pd.kpis]].filter(([,v])=>v).map(([title,content])=>(
+              <div key={title} style={{ width: "100%", maxWidth: 680, marginBottom: 20, borderLeft: "3px solid #E8C547", paddingLeft: 18 }}>
+                <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#E8C547", letterSpacing: "0.15em", marginBottom: 10 }}>{title}</div>
+                <div style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.85)", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{content}</div>
+              </div>
+            ))}
+            {pd.pro_tip && <div style={{ width: "100%", maxWidth: 680, background: "rgba(232,197,71,0.06)", border: "1.5px solid rgba(232,197,71,0.35)", borderRadius: 10, padding: "20px 22px" }}>
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.15em", marginBottom: 10 }}>✦ ELITE INSIDER TIP</div>
+              <div style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.9)", lineHeight: 1.75 }}>{pd.pro_tip}</div>
+            </div>}
+          </div>
+        );
+      }
+
+      return (
+        <div style={{ minHeight: "100vh", background: "#0D0D0F", padding: "0 16px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <div style={{ width: "100%", maxWidth: 680, paddingTop: 32, marginBottom: 32, display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 16 }}>
+            <div>
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.3em", marginBottom: 8 }}>PRESSREADY · PRO</div>
+              <h1 style={{ fontFamily: "'Lora', serif", fontSize: 32, color: "#fff", fontWeight: 600 }}>Launch Dashboard</h1>
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={onNewPlan} style={{ padding: "10px 20px", borderRadius: 8, background: "#E8C547", color: "#0D0D0F", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", cursor: "pointer" }}>+ NEW PLAN</button>
+              <button onClick={onBackToLanding} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.5)", padding: "10px 16px", borderRadius: 8, fontFamily: "'Space Mono', monospace", fontSize: 10, cursor: "pointer" }}>← HOME</button>
+            </div>
+          </div>
+          {loading && <div style={{ color: "rgba(255,255,255,0.4)", fontFamily: "'Space Mono', monospace", fontSize: 12, marginTop: 60 }}>LOADING YOUR LAUNCHES...</div>}
+          {!loading && plans.length === 0 && (
+            <div style={{ width: "100%", maxWidth: 680, textAlign: "center", padding: "60px 24px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14 }}>
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 16 }}>NO LAUNCHES YET</div>
+              <h3 style={{ fontFamily: "'Lora', serif", fontSize: 22, color: "#fff", marginBottom: 12, fontWeight: 600 }}>Generate your first plan to get started.</h3>
+              <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.5)", lineHeight: 1.7, marginBottom: 28 }}>Your saved launch plans will appear here with countdown timers, phase tracking, and today's action items.</p>
+              <button onClick={onNewPlan} style={{ padding: "14px 32px", borderRadius: 8, background: "#E8C547", color: "#0D0D0F", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, cursor: "pointer", letterSpacing: "0.12em" }}>GENERATE YOUR FIRST PLAN →</button>
+            </div>
+          )}
+          {!loading && plans.length > 0 && (
+            <div style={{ width: "100%", maxWidth: 680, display: "flex", flexDirection: "column", gap: 16 }}>
+              {plans.map(plan => {
+                const days = daysUntilLaunch(plan.launch_date);
+                const phase = getPhase(days);
+                return (
+                  <div key={plan.id} onClick={() => setSelectedPlan(plan)}
+                    onMouseEnter={e => e.currentTarget.style.borderColor='rgba(232,197,71,0.3)'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor='rgba(255,255,255,0.08)'}
+                    style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: "24px 28px", cursor: "pointer", transition: "border-color 0.2s", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+                    <div>
+                      <h3 style={{ fontFamily: "'Lora', serif", fontSize: 20, color: "#fff", fontWeight: 600, marginBottom: 4 }}>{plan.title}</h3>
+                      <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: "0.08em" }}>{plan.genre} · {plan.platform}</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 12, color: phase.color, fontWeight: 700, letterSpacing: "0.08em", marginBottom: 4 }}>{phase.label}</div>
+                      <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.35)" }}>
+                        {days === null ? 'No launch date set' : days === 0 ? 'TODAY' : days > 0 ? `${days} days until launch` : `${Math.abs(days)} days post-launch`}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    }
+
     // ── App root ──────────────────────────────────────────────────────────────
     function App() {
       const [view, setView] = useState('landing');
@@ -819,8 +1025,10 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       };
 
       return view === 'landing'
-        ? <Landing onStart={() => setView('wizard')} />
-        : <Wizard onBackToLanding={() => setView('landing')} proState={proState} onProVerified={handleProVerified} />;
+        ? <Landing onStart={() => setView('wizard')} onDashboard={() => setView('dashboard')} proState={proState} />
+        : view === 'dashboard'
+        ? <Dashboard proState={proState} onNewPlan={() => setView('wizard')} onBackToLanding={() => setView('landing')} />
+        : <Wizard onBackToLanding={() => setView('landing')} onDashboard={() => setView('dashboard')} proState={proState} onProVerified={handleProVerified} />;
     }
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
