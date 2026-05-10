@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PressReady · Launch Intelligence</title>
   <meta name="description" content="AI-generated book launch plans built by an indie press with 35 books across 7 pen names. Tailored to your book, budget, and timeline." />
-  <!-- Open Graph -->
   <meta property="og:title" content="PressReady · Launch Intelligence" />
   <meta property="og:description" content="Get a full book launch plan in 60 seconds. Built by an indie press with 35 books across 7 pen names." />
   <meta property="og:url" content="https://pressready.ink" />
@@ -14,7 +13,6 @@
   <meta name="twitter:title" content="PressReady · Launch Intelligence" />
   <meta name="twitter:description" content="Get a full book launch plan in 60 seconds." />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='12' fill='%230D0D0F'/><text y='72' x='50' text-anchor='middle' font-size='60' font-family='Georgia,serif' fill='%23E8C547'>P</text></svg>" />
-  <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-QDYVPWPDWD"></script>
   <script>
     window.dataLayer = window.dataLayer || [];
@@ -36,6 +34,7 @@
     @keyframes shimmer { 0%{background-position:200% center} 100%{background-position:-200% center} }
     @keyframes spin { to{transform:rotate(360deg)} }
     @keyframes glow { 0%,100%{box-shadow:0 0 20px rgba(232,197,71,0.15)} 50%{box-shadow:0 0 40px rgba(232,197,71,0.35)} }
+    @keyframes modalIn { from{opacity:0;transform:scale(0.95)} to{opacity:1;transform:scale(1)} }
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-thumb { background: rgba(232,197,71,0.3); border-radius: 2px; }
     @media print {
@@ -44,9 +43,7 @@
       .print-plan { color: #000 !important; background: #fff !important; padding: 20px !important; }
       .print-plan * { color: #000 !important; border-color: #ccc !important; background: transparent !important; }
     }
-    @media screen {
-      .print-only { display: none !important; }
-    }
+    @media screen { .print-only { display: none !important; } }
   </style>
 </head>
 <body>
@@ -54,22 +51,17 @@
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    /* ============================================================
-       CONFIG — all constants in one place so you can tune without
-       hunting through the file.
-       ============================================================ */
+    // ── Stripe subscription payment link ─────────────────────────────────────
+    // Replace this with the actual $9.99/month Payment Link you created in Stripe
+    const STRIPE_PRO_LINK = "https://buy.stripe.com/aFa7sM9AKcKr9KW3zP6Ri01";
 
-    // Stripe Payment Link for the $19 lifetime unlock.
-    // When you switch from sandbox to live, replace this URL with the live one.
-    const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/aFa4gAdR08ubcX86M16Ri00";
+    // ── Storage keys ─────────────────────────────────────────────────────────
+    const PRO_TOKEN_KEY = "pressready_pro_token_v1";
+    const PRO_EMAIL_KEY = "pressready_pro_email_v1";
+    // Legacy key — keeps working for anyone who paid the old $19
+    const LEGACY_UNLOCK_KEY = "pressready_unlocked_v1";
 
-    // Local storage keys for tracking unlock state.
-    // Bumping these versions invalidates all old unlocks (use if you ever need to reset).
-    const UNLOCK_STORAGE_KEY = "pressready_unlocked_v1";
-    const UNLOCK_SESSION_KEY = "pressready_session_v1"; // stores the Stripe session_id so backend can re-verify
-
-    // Sections that are free for everyone. The rest require unlock.
-    // Ordered from most-valuable-as-teaser to less.
+    // ── Sections visible without Pro ─────────────────────────────────────────
     const FREE_SECTION_KEYS = new Set([
       "executive_summary",
       "pre_launch",
@@ -93,35 +85,16 @@
     ];
 
     const SERIES_POSITIONS = [
-      "Standalone",
-      "Book 1 of series",
-      "Mid-series (book 2-4)",
-      "Series finale",
-      "Spin-off / companion"
+      "Standalone", "Book 1 of series", "Mid-series (book 2-4)",
+      "Series finale", "Spin-off / companion"
     ];
 
-    const EXPERIENCE = [
-      "First book",
-      "2-5 books published",
-      "6+ books published"
-    ];
-
-    const LIST_SIZES = [
-      "No list yet",
-      "Under 100",
-      "100-1,000",
-      "1,000+"
-    ];
-
-    const CATALOG_SIZES = [
-      "Only this book",
-      "2-5 other titles",
-      "6+ other titles in this pen name"
-    ];
-
-    const PLATFORMS = ["Amazon KDP / Kindle Unlimited", "IngramSpark / Wide", "Both KDP + Wide", "Draft2Digital"];
-    const BUDGETS = ["$0 – Bootstrap only", "$1–$100", "$101–$500", "$501–$1,000", "$1,000+"];
-    const TIMELINES = ["2 weeks", "1 month", "2 months", "3 months", "6 months"];
+    const EXPERIENCE    = ["First book", "2-5 books published", "6+ books published"];
+    const LIST_SIZES    = ["No list yet", "Under 100", "100-1,000", "1,000+"];
+    const CATALOG_SIZES = ["Only this book", "2-5 other titles", "6+ other titles in this pen name"];
+    const PLATFORMS     = ["Amazon KDP / Kindle Unlimited", "IngramSpark / Wide", "Both KDP + Wide", "Draft2Digital"];
+    const BUDGETS       = ["$0 – Bootstrap only", "$1–$100", "$101–$500", "$501–$1,000", "$1,000+"];
+    const TIMELINES     = ["2 weeks", "1 month", "2 months", "3 months", "6 months"];
 
     const LOADING_MESSAGES = [
       "ANALYZING YOUR GENRE...",
@@ -131,11 +104,7 @@
       "FINALIZING YOUR LAUNCH PLAN..."
     ];
 
-    /* ============================================================
-       PROMPT BUILDER — top-level pure function. Easy to find,
-       easy to A/B test, easy to read.
-       ============================================================ */
-
+    // ── Prompt builder ────────────────────────────────────────────────────────
     function buildPrompt(form) {
       return `You are PressReady, a launch strategist built by an indie press with 35 books across 7 pen names. You speak operator-to-operator. You do not pad. You do not hype.
 
@@ -164,41 +133,38 @@ BRANCHING RULES — APPLY BEFORE WRITING ANYTHING:
 
 3. SERIES POSITION
 - "Standalone": standard launch playbook.
-- "Book 1 of series": prioritize hook, sample, and series-setup. Note that real read-through plays come once Book 2 exists.
-- "Mid-series" or "Series finale": READ-THROUGH IS THE PRIMARY STRATEGY. Recommend free or $0.99 promo on Book 1 to drive paid sales and KU reads on the new release. DO NOT recommend pricing the new release at $0.99 — that cannibalizes read-through revenue from a series the reader is already invested in.
+- "Book 1 of series": prioritize hook, sample, and series-setup.
+- "Mid-series" or "Series finale": READ-THROUGH IS THE PRIMARY STRATEGY. Recommend free or $0.99 promo on Book 1. DO NOT recommend pricing the new release at $0.99.
 - "Spin-off / companion": leverage existing series fanbase via back matter, email, and series page placement.
 
 4. CATALOG SIZE
-- "Only this book": no cross-promotion possible yet; focus on this title's standalone performance.
+- "Only this book": no cross-promotion possible yet.
 - "2-5 other titles": back matter cross-promo is a tactic, not the strategy.
-- "6+ other titles in this pen name": back matter cross-promotion, series page optimization, and catalog-wide free promo rotation are PRIMARY tactics. The catalog is the moat.
+- "6+ other titles in this pen name": back matter cross-promotion, series page optimization, and catalog-wide free promo rotation are PRIMARY tactics.
 
 5. GENRE TAILORING
 - Urban Fiction: BookTok, Black bookstagram, KU read-through, urban fiction Facebook groups, street team grassroots.
 - Literary Fiction: NetGalley, Kirkus/Publishers Weekly, indie bookstore outreach, BCALA and similar awards, longer review cycles.
 - Psychological Thriller: BookTok, ARC services like BookSirens, thriller-specific newsletters, Goodreads thriller groups.
-- Science Fiction / Fantasy: r/printSF, r/Fantasy, Goodreads groups, series cross-promo, novella prequels for series setup.
+- Science Fiction / Fantasy: r/printSF, r/Fantasy, Goodreads groups, series cross-promo, novella prequels.
 - Romance: BookTok dominant, KU read-through critical, tropes loaded into metadata and blurb.
-- Mystery: cozy/hardboiled subgenre matters; Goodreads mystery groups, NetGalley, podcast tour for series authors.
-- Non-Fiction / Self-Help / Biography: LinkedIn, podcast tour, expert positioning, evergreen tail; less BookTok dependency.
+- Mystery: cozy/hardboiled subgenre matters; Goodreads mystery groups, NetGalley, podcast tour.
+- Non-Fiction / Self-Help / Biography: LinkedIn, podcast tour, expert positioning, evergreen tail.
 - Historical Fiction: NetGalley, historical fiction Facebook groups, reading-group/book-club outreach.
 - Horror: r/horrorlit, BookTok horror, indie horror podcasts, Halloween-season timing if relevant.
-- Use the actual genre named above; do not blend recommendations across genres.
 
 6. BUDGET DISCIPLINE
-- "$0 – Bootstrap only": zero paid recommendations. Every tactic must be free. Time is the only currency.
-- "$1–$100": small Amazon Ads test only after organic validation; free promo tools.
-- "$101–$500": modest Amazon Ads, one paid newsletter feature (Freebooksy/BargainBooksy tier).
-- "$501–$1,000": stacked promo days, BookBub Featured Deal candidate, Amazon Ads at sustainable spend.
+- "$0 – Bootstrap only": zero paid recommendations.
+- "$1–$100": small Amazon Ads test only after organic validation.
+- "$101–$500": modest Amazon Ads, one paid newsletter feature.
+- "$501–$1,000": stacked promo days, BookBub Featured Deal candidate.
 - "$1,000+": full launch stack — BookBub, paid PR, expanded ads, ARC service.
 
 PROHIBITED:
-- Do not invent reach numbers for hashtags or platforms ("35-50k reach each" type fabrications).
-- Do not invent any numerical benchmarks for views, reach, follower counts, open rates, click-through rates, or engagement percentages. Use qualitative framing only ("modest early traction," "enough to signal the algorithm").
-- Do not predict specific revenue figures, unit sales counts, KU page-read totals, or review counts. KPIs must be framed as targets to track, NOT as forecasts. Wrong: "expect 80-150 paid units." Right: "track paid units sold; benchmark against your prior launches."
-- Do not recommend tactics the author has already outgrown based on inputs above.
-- Do not write generic "elite insider tip" content. The pro tip must be non-obvious and specific to THIS author's combination of inputs.
-- Do not exceed the stated budget. Do not assume the author can spend more.
+- Do not invent reach numbers or numerical benchmarks.
+- Do not predict specific revenue figures, unit sales counts, or review counts.
+- Do not recommend tactics the author has outgrown.
+- Do not exceed the stated budget.
 
 OUTPUT FORMAT — return ONLY this JSON, no preamble, no markdown fences:
 {
@@ -212,17 +178,14 @@ OUTPUT FORMAT — return ONLY this JSON, no preamble, no markdown fences:
   "email_list": "6 bullets max, tailored to list size above",
   "post_launch": "3 phases, 3 bullets each",
   "budget_breakdown": "5 bullets max, must respect stated budget",
-  "kpis": "5 bullets max. Each KPI is a metric to track, not a number to forecast. Example format: 'Track launch-week unit sales; compare against your prior launches as the benchmark.'",
+  "kpis": "5 bullets max. Each KPI is a metric to track, not a number to forecast.",
   "pro_tip": "2-3 sentences. Must be specific to this author's inputs. Not generic."
 }
 
 Every value is a plain string. Use \\n for line breaks and • for bullets. Do NOT use nested objects or arrays.`;
     }
 
-    /* ============================================================
-       UTILITIES — small focused helpers.
-       ============================================================ */
-
+    // ── Utilities ─────────────────────────────────────────────────────────────
     function track(eventName, params = {}) {
       if (typeof gtag !== 'undefined') gtag('event', eventName, params);
     }
@@ -233,18 +196,13 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       const start = stripped.indexOf("{");
       const end = stripped.lastIndexOf("}");
       if (start === -1 || end === -1 || end <= start) return null;
-      const candidate = stripped.slice(start, end + 1);
-      try {
-        return JSON.parse(candidate);
-      } catch {
-        return null;
-      }
+      try { return JSON.parse(stripped.slice(start, end + 1)); } catch { return null; }
     }
 
     const REQUIRED_PLAN_KEYS = [
-      "executive_summary", "pre_launch", "launch_week", "pricing_strategy",
-      "review_strategy", "social_media", "algorithm_tips", "email_list",
-      "post_launch", "budget_breakdown", "kpis", "pro_tip"
+      "executive_summary","pre_launch","launch_week","pricing_strategy",
+      "review_strategy","social_media","algorithm_tips","email_list",
+      "post_launch","budget_breakdown","kpis","pro_tip"
     ];
 
     function validatePlan(plan) {
@@ -253,109 +211,162 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       return { valid: missing.length === 0, missing };
     }
 
-    /* ============================================================
-       UNLOCK STATE — handles the freemium gate.
-
-       Three ways a user becomes "unlocked":
-       1. Returns from Stripe with ?session_id=cs_test_xxx in URL
-          → we verify with Stripe via /api/verify-payment
-          → if paid, write to localStorage so they stay unlocked
-       2. Already has the localStorage flag from a previous unlock
-       3. (Future) admin grants a manual unlock code
-
-       Until the user is unlocked, the FREE_SECTION_KEYS render fully
-       and the rest render as a PaywallCard prompting the upgrade.
-       ============================================================ */
-
-    function readStoredUnlock() {
+    // ── Pro access state ──────────────────────────────────────────────────────
+    // Pro access comes from:
+    //   1. A valid pro_token in localStorage (issued by /api/verify-subscription)
+    //   2. Legacy: the old $19 unlock flag (honored forever)
+    function readProState() {
       try {
-        return localStorage.getItem(UNLOCK_STORAGE_KEY) === 'true';
+        const token = localStorage.getItem(PRO_TOKEN_KEY);
+        const email = localStorage.getItem(PRO_EMAIL_KEY);
+        const legacy = localStorage.getItem(LEGACY_UNLOCK_KEY) === 'true';
+        return { token, email, legacy, isPro: !!(token || legacy) };
       } catch {
-        return false;
+        return { token: null, email: null, legacy: false, isPro: false };
       }
     }
 
-    function readStoredSession() {
+    function writeProToken(token, email) {
       try {
-        return localStorage.getItem(UNLOCK_SESSION_KEY) || null;
-      } catch {
-        return null;
-      }
-    }
-
-    function writeStoredUnlock(sessionId) {
-      try {
-        localStorage.setItem(UNLOCK_STORAGE_KEY, 'true');
-        if (sessionId) localStorage.setItem(UNLOCK_SESSION_KEY, sessionId);
+        localStorage.setItem(PRO_TOKEN_KEY, token);
+        if (email) localStorage.setItem(PRO_EMAIL_KEY, email);
       } catch {}
     }
 
-    function useUnlock() {
-      const [unlocked, setUnlocked] = useState(() => readStoredUnlock());
-      const [sessionId, setSessionId] = useState(() => readStoredSession());
-      const [verifying, setVerifying] = useState(false);
-      const [verifyError, setVerifyError] = useState(null);
+    function clearProToken() {
+      try {
+        localStorage.removeItem(PRO_TOKEN_KEY);
+        localStorage.removeItem(PRO_EMAIL_KEY);
+      } catch {}
+    }
 
-      // On mount, check the URL for ?session_id= and verify with Stripe.
-      // This is what handles the redirect after a successful payment.
-      useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const urlSessionId = params.get('session_id');
-        const unlockedFlag = params.get('unlocked');
+    // ── Email verification modal ──────────────────────────────────────────────
+    function VerifyModal({ onSuccess, onClose }) {
+      const [email, setEmail] = useState("");
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState(null);
 
-        if (!urlSessionId || !unlockedFlag) return; // nothing to verify
-        if (readStoredUnlock()) {
-          // Already unlocked from a previous session; just clean up the URL.
-          cleanUrl();
+      const handleVerify = async () => {
+        if (!email.trim() || !email.includes('@')) {
+          setError("Please enter a valid email address.");
           return;
         }
-
-        setVerifying(true);
-        fetch('/api/verify-payment', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: urlSessionId })
-        })
-          .then(r => r.json())
-          .then(data => {
-            if (data && data.paid === true) {
-              writeStoredUnlock(urlSessionId);
-              setUnlocked(true);
-              setSessionId(urlSessionId);
-              track('unlock_verified', { session_id: urlSessionId });
-            } else {
-              setVerifyError("We couldn't confirm your payment. If you were charged, please contact blackfuegopublishing@proton.me.");
-              track('unlock_failed', { reason: data?.error || 'unpaid' });
-            }
-          })
-          .catch(err => {
-            setVerifyError("Connection error verifying payment: " + err.message);
-            track('unlock_failed', { reason: 'fetch_error' });
-          })
-          .finally(() => {
-            setVerifying(false);
-            cleanUrl();
+        setLoading(true);
+        setError(null);
+        try {
+          const res = await fetch('/api/verify-subscription', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email.trim().toLowerCase() })
           });
-      }, []);
+          const data = await res.json();
+          if (data.active && data.token) {
+            writeProToken(data.token, data.email);
+            track('pro_verified', { email: data.email });
+            onSuccess(data.token, data.email);
+          } else {
+            const reasons = {
+              no_subscription: "No active Pro subscription found for that email. If you just subscribed, wait a moment and try again.",
+              subscription_inactive: "Your subscription appears to be inactive or cancelled.",
+              stripe_error: "We couldn't verify your subscription right now. Please try again."
+            };
+            setError(reasons[data.reason] || "Verification failed. Please try again or contact blackfuegopublishing@proton.me.");
+          }
+        } catch (err) {
+          setError("Connection error. Please check your internet and try again.");
+        } finally {
+          setLoading(false);
+        }
+      };
 
-      return { unlocked, sessionId, verifying, verifyError };
+      return (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "16px" }}>
+          <div style={{ background: "#141416", border: "1.5px solid rgba(232,197,71,0.3)", borderRadius: 16, padding: "36px 32px", maxWidth: 440, width: "100%", animation: "modalIn 0.25s ease" }}>
+            <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 16 }}>PRESSREADY PRO</div>
+            <h3 style={{ fontFamily: "'Lora', serif", fontSize: 22, color: "#fff", fontWeight: 600, marginBottom: 10, lineHeight: 1.3 }}>Already a subscriber?</h3>
+            <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.6)", lineHeight: 1.7, marginBottom: 24 }}>Enter the email you used when you subscribed to restore full access on this device.</p>
+            <input
+              type="email"
+              placeholder="your@email.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleVerify()}
+              style={{ width: "100%", padding: "13px 16px", background: "rgba(255,255,255,0.06)", border: "1.5px solid rgba(255,255,255,0.15)", borderRadius: 8, color: "#fff", fontFamily: "'Lora', Georgia, serif", fontSize: 15, marginBottom: 12 }}
+            />
+            {error && (
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#ff8a8a", lineHeight: 1.6, marginBottom: 12 }}>{error}</div>
+            )}
+            <button
+              onClick={handleVerify}
+              disabled={loading}
+              style={{ width: "100%", padding: "14px", borderRadius: 8, background: loading ? "rgba(232,197,71,0.5)" : "#E8C547", color: "#0D0D0F", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, letterSpacing: "0.12em", cursor: loading ? "not-allowed" : "pointer", textTransform: "uppercase", marginBottom: 12 }}
+            >
+              {loading ? "VERIFYING..." : "RESTORE ACCESS →"}
+            </button>
+            <button
+              onClick={onClose}
+              style={{ width: "100%", padding: "10px", borderRadius: 8, background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.4)", fontFamily: "'Space Mono', monospace", fontSize: 11, cursor: "pointer", letterSpacing: "0.08em" }}
+            >
+              CANCEL
+            </button>
+          </div>
+        </div>
+      );
     }
 
-    // After we've consumed the URL params, scrub them so the user
-    // can refresh without re-triggering verification.
-    function cleanUrl() {
-      try {
-        const url = new URL(window.location.href);
-        url.searchParams.delete('session_id');
-        url.searchParams.delete('unlocked');
-        window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ''));
-      } catch {}
+    // ── Paywall card ──────────────────────────────────────────────────────────
+    function PaywallCard({ title, isPrimary = false, delay = 0, onRestoreAccess }) {
+      const [visible, setVisible] = useState(false);
+      useEffect(() => { const t = setTimeout(() => setVisible(true), delay); return () => clearTimeout(t); }, []);
+
+      const handleSubscribe = () => {
+        track('pro_subscribe_clicked', { from_section: title });
+        window.open(STRIPE_PRO_LINK, '_blank');
+      };
+
+      if (!isPrimary) {
+        return (
+          <div style={{ opacity: visible ? 1 : 0, transition: "opacity 0.5s ease", marginBottom: 16, borderLeft: "3px solid rgba(232,197,71,0.25)", paddingLeft: 18, paddingTop: 4, paddingBottom: 4 }}>
+            <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(232,197,71,0.5)", letterSpacing: "0.15em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 13 }}>🔒</span>{title}
+              <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", letterSpacing: "0.1em" }}>— PRO ONLY</span>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(16px)", transition: "all 0.5s ease", marginBottom: 28, marginTop: 16, padding: "32px 28px", background: "linear-gradient(135deg, rgba(232,197,71,0.08), rgba(232,197,71,0.02))", border: "1.5px solid rgba(232,197,71,0.4)", borderRadius: 14 }}>
+          <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 14 }}>
+            🔒 8 SECTIONS · PRO ONLY
+          </div>
+          <h3 style={{ fontFamily: "'Lora', serif", fontSize: 26, color: "#fff", fontWeight: 600, marginBottom: 12, lineHeight: 1.25 }}>Unlock your full launch plan.</h3>
+          <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.75)", lineHeight: 1.7, marginBottom: 22 }}>
+            You've seen the strategy overview, pre-launch checklist, launch week tactics, and pricing strategy. The remaining 8 sections — review &amp; ARC strategy, social media plan, algorithm triggers, email list building, post-launch plan, budget breakdown, success metrics, and the Elite Insider Tip — are part of PressReady Pro.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 26 }}>
+            {["Review & ARC Strategy","Social Media Plan","Algorithm Triggers","Email List Building","Post-Launch Plan","Budget Breakdown","Success Metrics","Elite Insider Tip"].map(s => (
+              <div key={s} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(232,197,71,0.15)", borderRadius: 6, padding: "10px 12px", fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.6)", letterSpacing: "0.05em" }}>
+                🔒 {s}
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 16 }}>
+            <button onClick={handleSubscribe} style={{ padding: "16px 36px", borderRadius: 10, background: "#E8C547", color: "#0D0D0F", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", cursor: "pointer", textTransform: "uppercase" }}>
+              Subscribe — $9.99/mo
+            </button>
+            <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: "0.08em", lineHeight: 1.5 }}>
+              Unlimited plans · Full 12 sections<br/>Cancel anytime
+            </div>
+          </div>
+          <button onClick={onRestoreAccess} style={{ background: "transparent", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(232,197,71,0.6)", letterSpacing: "0.1em", cursor: "pointer", textDecoration: "underline", padding: 0 }}>
+            Already a subscriber? Restore access →
+          </button>
+        </div>
+      );
     }
 
-    /* ============================================================
-       PRESENTATIONAL COMPONENTS
-       ============================================================ */
-
+    // ── Presentational components ─────────────────────────────────────────────
     function Landing({ onStart }) {
       return (
         <div style={{ minHeight: "100vh", background: "#0D0D0F", backgroundImage: "radial-gradient(ellipse at 30% 0%, rgba(232,197,71,0.08) 0%, transparent 55%), radial-gradient(ellipse at 80% 90%, rgba(232,197,71,0.04) 0%, transparent 50%)", color: "#fff", fontFamily: "'Lora', Georgia, serif", padding: "0 16px 80px" }}>
@@ -384,33 +395,35 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
               <div>
                 <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 12 }}>01 — TAILORED</div>
                 <h3 style={{ fontFamily: "'Lora', serif", fontSize: 18, color: "#fff", marginBottom: 10, fontWeight: 600 }}>Genre + experience aware</h3>
-                <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 1.7 }}>A debut and a 6-book backlist need different plans. PressReady asks the right questions and branches accordingly. No one-size-fits-all.</p>
+                <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 1.7 }}>A debut and a 6-book backlist need different plans. PressReady asks the right questions and branches accordingly.</p>
               </div>
               <div>
                 <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 12 }}>02 — EXECUTABLE</div>
                 <h3 style={{ fontFamily: "'Lora', serif", fontSize: 18, color: "#fff", marginBottom: 10, fontWeight: 600 }}>Day-by-day actions</h3>
-                <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 1.7 }}>No generic advice. Twelve sections covering pricing, ARC outreach, launch week tactics, post-launch follow-through, and budget allocation.</p>
+                <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 1.7 }}>Twelve sections covering pricing, ARC outreach, launch week tactics, post-launch follow-through, and budget allocation.</p>
               </div>
               <div>
                 <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 12 }}>03 — REAL</div>
                 <h3 style={{ fontFamily: "'Lora', serif", fontSize: 18, color: "#fff", marginBottom: 10, fontWeight: 600 }}>Built by a publisher</h3>
-                <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 1.7 }}>Most launch tools are built by people who've never published a book. PressReady was built by a press that has — 35 times, across 7 pen names.</p>
+                <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 1.7 }}>Most launch tools are built by people who've never published a book. PressReady was built by a press that has — 35 times.</p>
               </div>
             </div>
             <div style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: "36px 32px", marginBottom: 60, animation: "fadeUp 0.7s ease 0.4s both" }}>
               <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 20 }}>WHO BUILT THIS</div>
               <h3 style={{ fontFamily: "'Lora', serif", fontSize: 24, color: "#fff", marginBottom: 16, fontWeight: 600 }}>Black Fuego Press is an independent imprint with 35 books across 7 pen names.</h3>
-              <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.7)", lineHeight: 1.8, marginBottom: 14 }}>The press operates across urban fiction, literary fiction, psychological thrillers, sci-fi, non-fiction, and historical fiction. Books in the catalog have run BookTok campaigns, NetGalley pushes, KU free promo stacks, BookBub features, and BCALA award submissions. The strategies that work — and the ones that don't — were learned the long way: title by title, launch by launch.</p>
+              <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.7)", lineHeight: 1.8, marginBottom: 14 }}>The press operates across urban fiction, literary fiction, psychological thrillers, sci-fi, non-fiction, and historical fiction. The strategies that work — and the ones that don't — were learned the long way: title by title, launch by launch.</p>
               <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.7)", lineHeight: 1.8 }}>Most launch advice online is recycled, written by people who've never sold a book they wrote themselves. PressReady was built so authors don't have to figure it out the hard way over six years and 35 books.</p>
               <div style={{ marginTop: 24, fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(232,197,71,0.7)", letterSpacing: "0.1em" }}>— Black Fuego Press</div>
             </div>
             <div style={{ marginBottom: 60, animation: "fadeUp 0.7s ease 0.5s both" }}>
-              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 16, textAlign: "center" }}>WHAT YOU GET</div>
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 16, textAlign: "center" }}>WHAT YOU GET WITH PRO</div>
               <h3 style={{ fontFamily: "'Lora', serif", fontSize: 22, color: "#fff", marginBottom: 28, fontWeight: 600, textAlign: "center" }}>A complete strategy across 12 sections.</h3>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-                {["Strategy Overview","Pre-Launch Checklist","Launch Week Tactics","Pricing Strategy","Review & ARC Strategy","Social Media Plan","Algorithm Triggers","Email List Building","Post-Launch Plan","Budget Breakdown","Success Metrics","Elite Insider Tip"].map((s, i) => (
-                  <div key={s} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(232,197,71,0.15)", borderRadius: 6, padding: "12px 14px", fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.7)", letterSpacing: "0.05em" }}>
-                    <span style={{ color: "#E8C547", marginRight: 8 }}>{String(i + 1).padStart(2, '0')}</span>{s}
+                {[["Strategy Overview","free"],["Pre-Launch Checklist","free"],["Launch Week Tactics","free"],["Pricing Strategy","free"],["Review & ARC Strategy","pro"],["Social Media Plan","pro"],["Algorithm Triggers","pro"],["Email List Building","pro"],["Post-Launch Plan","pro"],["Budget Breakdown","pro"],["Success Metrics","pro"],["Elite Insider Tip","pro"]].map(([s, tier], i) => (
+                  <div key={s} style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${tier === 'pro' ? 'rgba(232,197,71,0.25)' : 'rgba(232,197,71,0.1)'}`, borderRadius: 6, padding: "12px 14px", fontFamily: "'Space Mono', monospace", fontSize: 11, color: tier === 'pro' ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.5)", letterSpacing: "0.05em" }}>
+                    <span style={{ color: "#E8C547", marginRight: 8 }}>{String(i + 1).padStart(2, '0')}</span>
+                    {s}
+                    {tier === 'pro' && <span style={{ marginLeft: 6, fontSize: 9, color: "rgba(232,197,71,0.6)", letterSpacing: "0.1em" }}>PRO</span>}
                   </div>
                 ))}
               </div>
@@ -472,9 +485,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
     function RotatingMessage() {
       const [index, setIndex] = useState(0);
       useEffect(() => {
-        const interval = setInterval(() => {
-          setIndex(i => (i + 1) % LOADING_MESSAGES.length);
-        }, 4000);
+        const interval = setInterval(() => setIndex(i => (i + 1) % LOADING_MESSAGES.length), 4000);
         return () => clearInterval(interval);
       }, []);
       return <TypewriterText key={index} text={LOADING_MESSAGES[index]} />;
@@ -488,63 +499,6 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
         <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(16px)", transition: "all 0.5s ease", marginBottom: 28, borderLeft: "3px solid #E8C547", paddingLeft: 18 }}>
           <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#E8C547", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 10 }}>{title}</div>
           <div style={{ fontFamily: "'Lora', Georgia, serif", fontSize: 15, color: "rgba(255,255,255,0.88)", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{text}</div>
-        </div>
-      );
-    }
-
-    // Renders in place of a locked section. Shows a teaser, the section title,
-    // and a single "Unlock Full Plan" button that goes to Stripe.
-    // Only the FIRST locked section in a plan shows the full upgrade card;
-    // subsequent ones show a slim "locked" indicator to avoid 8 paywall cards stacked.
-    function PaywallCard({ title, isPrimary = false, delay = 0 }) {
-      const [visible, setVisible] = useState(false);
-      useEffect(() => { const t = setTimeout(() => setVisible(true), delay); return () => clearTimeout(t); }, []);
-
-      const handleUnlock = () => {
-        track('unlock_clicked', { from_section: title });
-        window.location.href = STRIPE_PAYMENT_LINK;
-      };
-
-      if (!isPrimary) {
-        // Slim locked indicator for non-primary locked sections
-        return (
-          <div style={{ opacity: visible ? 1 : 0, transition: "opacity 0.5s ease", marginBottom: 16, borderLeft: "3px solid rgba(232,197,71,0.25)", paddingLeft: 18, paddingTop: 4, paddingBottom: 4 }}>
-            <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(232,197,71,0.5)", letterSpacing: "0.15em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: 13 }}>🔒</span>
-              {title}
-              <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", letterSpacing: "0.1em" }}>— UNLOCK TO VIEW</span>
-            </div>
-          </div>
-        );
-      }
-
-      // Primary upgrade card — full pitch and CTA
-      return (
-        <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(16px)", transition: "all 0.5s ease", marginBottom: 28, marginTop: 16, padding: "32px 28px", background: "linear-gradient(135deg, rgba(232,197,71,0.08), rgba(232,197,71,0.02))", border: "1.5px solid rgba(232,197,71,0.4)", borderRadius: 14 }}>
-          <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 14 }}>
-            🔒 8 SECTIONS LOCKED
-          </div>
-          <h3 style={{ fontFamily: "'Lora', serif", fontSize: 26, color: "#fff", fontWeight: 600, marginBottom: 12, lineHeight: 1.25 }}>
-            Unlock the rest of your plan.
-          </h3>
-          <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.75)", lineHeight: 1.7, marginBottom: 22 }}>
-            You've seen the strategy overview, pre-launch checklist, launch week tactics, and pricing strategy. The remaining 8 sections — review &amp; ARC strategy, social media plan, algorithm triggers, email list building, post-launch plan, budget breakdown, success metrics, and the Elite Insider Tip — are part of the full plan.
-          </p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 26 }}>
-            {["Review & ARC Strategy","Social Media Plan","Algorithm Triggers","Email List Building","Post-Launch Plan","Budget Breakdown","Success Metrics","Elite Insider Tip"].map(s => (
-              <div key={s} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(232,197,71,0.15)", borderRadius: 6, padding: "10px 12px", fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.6)", letterSpacing: "0.05em" }}>
-                🔒 {s}
-              </div>
-            ))}
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
-            <button onClick={handleUnlock} style={{ padding: "16px 36px", borderRadius: 10, background: "#E8C547", color: "#0D0D0F", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", cursor: "pointer", textTransform: "uppercase" }}>
-              Unlock Full Plan — $19
-            </button>
-            <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: "0.08em" }}>
-              Lifetime access · No subscription · Generate unlimited plans
-            </div>
-          </div>
         </div>
       );
     }
@@ -565,20 +519,13 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
     function CopyButton({ planText, onCopy }) {
       const [copied, setCopied] = useState(false);
       const handleCopy = () => {
-        const finish = () => {
-          setCopied(true);
-          if (onCopy) onCopy();
-          setTimeout(() => setCopied(false), 2000);
-        };
+        const finish = () => { setCopied(true); if (onCopy) onCopy(); setTimeout(() => setCopied(false), 2000); };
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(planText).then(finish).catch(() => {
             const el = document.createElement('textarea');
-            el.value = planText;
-            document.body.appendChild(el);
-            el.select();
+            el.value = planText; document.body.appendChild(el); el.select();
             try { document.execCommand('copy'); } catch {}
-            document.body.removeChild(el);
-            finish();
+            document.body.removeChild(el); finish();
           });
         }
       };
@@ -592,19 +539,12 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
     function ShareButton() {
       const [shared, setShared] = useState(false);
       const handleShare = () => {
-        const shareData = {
-          title: "PressReady · Launch Intelligence",
-          text: "Just got my book launch plan from PressReady — built by an indie press with 35 books. pressready.ink",
-          url: "https://pressready.ink"
-        };
         const flagShared = () => { setShared(true); setTimeout(() => setShared(false), 2000); };
         if (navigator.share) {
-          navigator.share(shareData).catch(() => {});
-        } else if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.share({ title: "PressReady · Launch Intelligence", text: "Just got my book launch plan from PressReady — built by an indie press with 35 books. pressready.ink", url: "https://pressready.ink" }).catch(() => {});
+        } else if (navigator.clipboard) {
           navigator.clipboard.writeText("Just got my book launch plan from PressReady — built by an indie press. pressready.ink").then(flagShared).catch(flagShared);
-        } else {
-          flagShared();
-        }
+        } else { flagShared(); }
       };
       return (
         <button onClick={handleShare} style={{ padding: "12px 20px", borderRadius: 6, border: "1.5px solid rgba(255,255,255,0.15)", background: shared ? "rgba(255,255,255,0.08)" : "transparent", color: "rgba(255,255,255,0.6)", fontFamily: "'Space Mono', monospace", fontSize: 11, cursor: "pointer", transition: "all 0.2s", minWidth: 100 }}>
@@ -613,30 +553,19 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       );
     }
 
-    /* ============================================================
-       WIZARD — the actual app logic.
-       ============================================================ */
+    // ── Wizard ────────────────────────────────────────────────────────────────
+    const INITIAL_FORM = { genre: "", title: "", series_position: "", experience: "", list_size: "", catalog_size: "", platform: "", budget: "", timeline: "" };
 
-    const INITIAL_FORM = {
-      genre: "",
-      title: "",
-      series_position: "",
-      experience: "",
-      list_size: "",
-      catalog_size: "",
-      platform: "",
-      budget: "",
-      timeline: ""
-    };
-
-    function Wizard({ onBackToLanding, unlocked, sessionId, verifying, verifyError }) {
+    function Wizard({ onBackToLanding, proState, onProVerified }) {
       const [step, setStep] = useState(0);
       const [form, setForm] = useState(INITIAL_FORM);
       const [loading, setLoading] = useState(false);
       const [plan, setPlan] = useState(null);
       const [parsedPlan, setParsedPlan] = useState(null);
       const [error, setError] = useState(null);
+      const [showVerifyModal, setShowVerifyModal] = useState(false);
 
+      const isPro = proState.isPro;
       const update = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
       const canNext = () => {
@@ -655,7 +584,6 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
         setLoading(true); setError(null); setPlan(null); setParsedPlan(null);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 55000);
-
         const prompt = buildPrompt(form);
 
         try {
@@ -664,7 +592,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               prompt,
-              unlock_session_id: unlocked && sessionId ? sessionId : undefined
+              pro_token: proState.token || undefined
             }),
             signal: controller.signal
           });
@@ -672,8 +600,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
 
           if (data.error) {
             const msg = typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error));
-            setError(msg);
-            return;
+            setError(msg); return;
           }
 
           const raw = (data.content || []).map(b => b.text || "").join("");
@@ -683,36 +610,22 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
           if (parsed) {
             const { valid, missing } = validatePlan(parsed);
             setParsedPlan(parsed);
-            track('plan_generated', {
-              genre: form.genre,
-              experience: form.experience,
-              series_position: form.series_position,
-              platform: form.platform,
-              valid,
-              missing_count: missing.length,
-              unlocked
-            });
+            track('plan_generated', { genre: form.genre, experience: form.experience, isPro, valid, missing_count: missing.length });
           } else {
             setPlan(raw);
             track('plan_generated_unparsed', { genre: form.genre });
           }
         } catch (err) {
-          const isTimeout = err.name === 'AbortError';
-          if (retryCount < 1) {
-            clearTimeout(timeoutId);
-            setLoading(false);
-            return generatePlan(retryCount + 1);
-          }
-          if (isTimeout) {
+          if (retryCount < 1) { clearTimeout(timeoutId); setLoading(false); return generatePlan(retryCount + 1); }
+          if (err.name === 'AbortError') {
             setError("Request timed out. Our servers are busy — please try again in a moment.");
-            track('generation_error', { reason: 'timeout', genre: form.genre });
+            track('generation_error', { reason: 'timeout' });
           } else {
             setError("Connection error: " + err.message);
-            track('generation_error', { reason: err.message, genre: form.genre });
+            track('generation_error', { reason: err.message });
           }
         } finally {
-          clearTimeout(timeoutId);
-          setLoading(false);
+          clearTimeout(timeoutId); setLoading(false);
         }
       };
 
@@ -721,24 +634,12 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
         else generatePlan();
       };
 
-      const reset = () => {
-        setStep(0);
-        setForm(INITIAL_FORM);
-        setPlan(null);
-        setParsedPlan(null);
-        setError(null);
-      };
+      const reset = () => { setStep(0); setForm(INITIAL_FORM); setPlan(null); setParsedPlan(null); setError(null); };
 
-      // For copy-to-clipboard: only include unlocked content.
       const planText = parsedPlan
-        ? Object.entries(parsedPlan)
-            .filter(([k]) => unlocked || FREE_SECTION_KEYS.has(k))
-            .map(([k, v]) => `${k.toUpperCase().replace(/_/g, " ")}\n${v}`)
-            .join("\n\n")
+        ? Object.entries(parsedPlan).filter(([k]) => isPro || FREE_SECTION_KEYS.has(k)).map(([k, v]) => `${k.toUpperCase().replace(/_/g, " ")}\n${v}`).join("\n\n")
         : (plan || "");
 
-      // Section render plan: which sections to show, in what order, gated by unlock state.
-      // Returns: array of { type: 'section' | 'paywall_primary' | 'paywall_slim', title, key, delay }
       const renderPlan = () => {
         const ordered = [
           ["PRE-LAUNCH CHECKLIST",  "pre_launch",       200],
@@ -752,23 +653,15 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
           ["BUDGET BREAKDOWN",      "budget_breakdown", 1800],
           ["SUCCESS METRICS",       "kpis",             2000]
         ];
-
         const items = [];
         let primaryPaywallShown = false;
-
         for (const [title, key, delay] of ordered) {
           const isFree = FREE_SECTION_KEYS.has(key);
-          if (unlocked || isFree) {
-            if (parsedPlan[key]) {
-              items.push({ type: 'section', title, key, delay });
-            }
+          if (isPro || isFree) {
+            if (parsedPlan[key]) items.push({ type: 'section', title, key, delay });
           } else {
-            if (!primaryPaywallShown) {
-              items.push({ type: 'paywall_primary', title, key, delay });
-              primaryPaywallShown = true;
-            } else {
-              items.push({ type: 'paywall_slim', title, key, delay });
-            }
+            if (!primaryPaywallShown) { items.push({ type: 'paywall_primary', title, key, delay }); primaryPaywallShown = true; }
+            else { items.push({ type: 'paywall_slim', title, key, delay }); }
           }
         }
         return items;
@@ -776,11 +669,18 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
 
       return (
         <div style={{ minHeight: "100vh", background: "#0D0D0F", backgroundImage: "radial-gradient(ellipse at 20% 20%, rgba(232,197,71,0.06) 0%, transparent 60%)", fontFamily: "'Lora', Georgia, serif", padding: "0 16px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+          {showVerifyModal && (
+            <VerifyModal
+              onSuccess={(token, email) => { onProVerified(token, email); setShowVerifyModal(false); }}
+              onClose={() => setShowVerifyModal(false)}
+            />
+          )}
+
           <div className="no-print" style={{ width: "100%", maxWidth: 680, paddingTop: 32, marginBottom: 32, animation: "fadeUp 0.6s ease both", display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 16 }}>
             <div>
               <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.3em", textTransform: "uppercase", marginBottom: 12, opacity: 0.8 }}>
                 PressReady · Launch Intelligence
-                {unlocked && <span style={{ marginLeft: 12, color: "rgba(232,197,71,0.6)", fontSize: 9 }}>· FULL ACCESS</span>}
+                {isPro && <span style={{ marginLeft: 12, color: "rgba(232,197,71,0.8)", fontSize: 9 }}>· PRO</span>}
               </div>
               <h1 style={{ fontSize: "clamp(28px, 5vw, 44px)", fontWeight: 600, color: "#FFFFFF", margin: 0, lineHeight: 1.15, fontFamily: "'Lora', Georgia, serif" }}>
                 Press<span style={{ fontStyle: "italic", color: "#E8C547" }}>Ready</span>
@@ -791,85 +691,17 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
             )}
           </div>
 
-          {/* Verification banner: shown briefly when user returns from Stripe */}
-          {verifying && (
-            <div className="no-print" style={{ width: "100%", maxWidth: 680, marginBottom: 16, padding: "14px 20px", background: "rgba(232,197,71,0.08)", border: "1px solid rgba(232,197,71,0.3)", borderRadius: 10, fontFamily: "'Space Mono', monospace", fontSize: 12, color: "#E8C547", letterSpacing: "0.08em", textAlign: "center" }}>
-              VERIFYING YOUR PAYMENT...
-            </div>
-          )}
-
-          {verifyError && (
-            <div className="no-print" style={{ width: "100%", maxWidth: 680, marginBottom: 16, padding: "14px 20px", background: "rgba(255,107,107,0.08)", border: "1px solid rgba(255,107,107,0.3)", borderRadius: 10, fontFamily: "'Space Mono', monospace", fontSize: 12, color: "#ff8a8a", letterSpacing: "0.04em", lineHeight: 1.6 }}>
-              {verifyError}
-            </div>
-          )}
-
-          {/* Unlocked confirmation banner: shown after successful verification */}
-          {unlocked && !verifying && (plan || parsedPlan) && (
-            <div className="no-print" style={{ width: "100%", maxWidth: 680, marginBottom: 16, padding: "14px 20px", background: "rgba(232,197,71,0.08)", border: "1px solid rgba(232,197,71,0.3)", borderRadius: 10, fontFamily: "'Space Mono', monospace", fontSize: 12, color: "#E8C547", letterSpacing: "0.08em", textAlign: "center" }}>
-              ✓ FULL PLAN UNLOCKED · LIFETIME ACCESS
-            </div>
-          )}
-
           <div style={{ width: "100%", maxWidth: 680, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: "36px 32px", animation: "fadeUp 0.7s ease 0.1s both" }}>
 
             {!plan && !parsedPlan && !loading && (
               <>
                 <ProgressBar step={step} />
-
-                {step === 0 && (
-                  <div>
-                    <Label>What genre is your book?</Label>
-                    <SelectGrid options={GENRES} value={form.genre} onChange={v => { update("genre", v); track('genre_selected', { genre: v }); }} />
-                  </div>
-                )}
-
-                {step === 1 && (
-                  <div>
-                    <Label>Book title</Label>
-                    <Input placeholder="Book title *" value={form.title} onChange={e => update("title", e.target.value)} />
-                    <div style={{ marginTop: 24 }}>
-                      <Label>Where does this book sit?</Label>
-                      <SelectGrid options={SERIES_POSITIONS} value={form.series_position} onChange={v => update("series_position", v)} minWidth={170} />
-                    </div>
-                  </div>
-                )}
-
-                {step === 2 && (
-                  <div>
-                    <Label>How many books have you published?</Label>
-                    <SelectGrid options={EXPERIENCE} value={form.experience} onChange={v => update("experience", v)} minWidth={160} />
-                    <div style={{ marginTop: 24 }}>
-                      <Label>Email list size</Label>
-                      <SelectGrid options={LIST_SIZES} value={form.list_size} onChange={v => update("list_size", v)} minWidth={130} />
-                    </div>
-                    <div style={{ marginTop: 24 }}>
-                      <Label>Other titles in this pen name</Label>
-                      <SelectGrid options={CATALOG_SIZES} value={form.catalog_size} onChange={v => update("catalog_size", v)} minWidth={180} />
-                    </div>
-                  </div>
-                )}
-
-                {step === 3 && (
-                  <div>
-                    <Label>Publishing platform</Label>
-                    <SelectGrid options={PLATFORMS} value={form.platform} onChange={v => update("platform", v)} minWidth={180} />
-                  </div>
-                )}
-
-                {step === 4 && (
-                  <div>
-                    <Label>Marketing budget</Label>
-                    <SelectGrid options={BUDGETS} value={form.budget} onChange={v => update("budget", v)} minWidth={160} />
-                  </div>
-                )}
-
-                {step === 5 && (
-                  <div>
-                    <Label>Time until launch</Label>
-                    <SelectGrid options={TIMELINES} value={form.timeline} onChange={v => update("timeline", v)} />
-                  </div>
-                )}
+                {step === 0 && (<div><Label>What genre is your book?</Label><SelectGrid options={GENRES} value={form.genre} onChange={v => { update("genre", v); track('genre_selected', { genre: v }); }} /></div>)}
+                {step === 1 && (<div><Label>Book title</Label><Input placeholder="Book title *" value={form.title} onChange={e => update("title", e.target.value)} /><div style={{ marginTop: 24 }}><Label>Where does this book sit?</Label><SelectGrid options={SERIES_POSITIONS} value={form.series_position} onChange={v => update("series_position", v)} minWidth={170} /></div></div>)}
+                {step === 2 && (<div><Label>How many books have you published?</Label><SelectGrid options={EXPERIENCE} value={form.experience} onChange={v => update("experience", v)} minWidth={160} /><div style={{ marginTop: 24 }}><Label>Email list size</Label><SelectGrid options={LIST_SIZES} value={form.list_size} onChange={v => update("list_size", v)} minWidth={130} /></div><div style={{ marginTop: 24 }}><Label>Other titles in this pen name</Label><SelectGrid options={CATALOG_SIZES} value={form.catalog_size} onChange={v => update("catalog_size", v)} minWidth={180} /></div></div>)}
+                {step === 3 && (<div><Label>Publishing platform</Label><SelectGrid options={PLATFORMS} value={form.platform} onChange={v => update("platform", v)} minWidth={180} /></div>)}
+                {step === 4 && (<div><Label>Marketing budget</Label><SelectGrid options={BUDGETS} value={form.budget} onChange={v => update("budget", v)} minWidth={160} /></div>)}
+                {step === 5 && (<div><Label>Time until launch</Label><SelectGrid options={TIMELINES} value={form.timeline} onChange={v => update("timeline", v)} /></div>)}
 
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 36, alignItems: "center" }}>
                   {step > 0 ? <button onClick={() => setStep(s => s - 1)} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", fontFamily: "'Space Mono', monospace", fontSize: 12, cursor: "pointer", letterSpacing: "0.08em" }}>← BACK</button> : <div />}
@@ -883,9 +715,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
             {loading && (
               <div style={{ textAlign: "center", padding: "48px 0" }}>
                 <div style={{ width: 48, height: 48, borderRadius: "50%", border: "3px solid rgba(232,197,71,0.2)", borderTop: "3px solid #E8C547", margin: "0 auto 24px", animation: "spin 1s linear infinite" }} />
-                <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 12, color: "#E8C547", letterSpacing: "0.15em" }}>
-                  <RotatingMessage />
-                </div>
+                <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 12, color: "#E8C547", letterSpacing: "0.15em" }}><RotatingMessage /></div>
                 <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 13, marginTop: 12, fontStyle: "italic" }}>This usually takes 10–20 seconds. Please wait...</div>
               </div>
             )}
@@ -902,30 +732,25 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
                 <div className="no-print" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 32, flexWrap: "wrap", gap: 12 }}>
                   <div>
                     <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 6 }}>
-                      LAUNCH PLAN {unlocked ? "READY" : "PREVIEW"}
+                      LAUNCH PLAN {isPro ? "· PRO" : "PREVIEW"}
                     </div>
                     <h2 style={{ fontFamily: "'Lora', serif", color: "#fff", fontSize: 22, margin: 0, fontWeight: 600 }}>{form.title}</h2>
                     <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>{form.genre} · {form.series_position} · {form.platform} · {form.timeline}</div>
                   </div>
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <CopyButton planText={planText} onCopy={() => track('plan_copied', { genre: form.genre, unlocked })} />
+                    <CopyButton planText={planText} onCopy={() => track('plan_copied', { genre: form.genre, isPro })} />
                     <ShareButton />
-                    {unlocked && (
+                    {isPro && (
                       <button onClick={() => { track('plan_downloaded', { genre: form.genre }); window.print(); }} style={{ padding: "12px 20px", borderRadius: 6, border: "1.5px solid rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.6)", fontFamily: "'Space Mono', monospace", fontSize: 11, cursor: "pointer" }}>SAVE PDF</button>
                     )}
                     <button onClick={reset} style={{ padding: "12px 20px", borderRadius: 6, border: "1.5px solid rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.5)", fontFamily: "'Space Mono', monospace", fontSize: 11, cursor: "pointer" }}>NEW PLAN</button>
                   </div>
                 </div>
-                <div className="print-only" style={{ marginBottom: 16 }}>
-                  <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#000", letterSpacing: "0.2em", marginBottom: 4 }}>LAUNCH PLAN — PRESSREADY.INK</div>
-                  <h2 style={{ fontFamily: "'Lora', serif", color: "#000", fontSize: 22, margin: 0, fontWeight: 600 }}>{form.title}</h2>
-                  <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#555", marginTop: 4, marginBottom: 16 }}>{form.genre} · {form.series_position} · {form.platform} · {form.timeline}</div>
-                </div>
+
                 <div className="no-print" style={{ height: 1, background: "rgba(232,197,71,0.2)", marginBottom: 32 }} />
 
                 {parsedPlan && (
                   <>
-                    {/* Strategy Overview is always free */}
                     {parsedPlan.executive_summary && (
                       <div style={{ background: "rgba(232,197,71,0.08)", border: "1px solid rgba(232,197,71,0.2)", borderRadius: 10, padding: "18px 20px", marginBottom: 28 }}>
                         <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.15em", marginBottom: 8 }}>STRATEGY OVERVIEW</div>
@@ -933,19 +758,13 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
                       </div>
                     )}
 
-                    {/* Render the body sections — each is either a real section or a paywall */}
                     {renderPlan().map(item => {
-                      if (item.type === 'section') {
-                        return <PlanSection key={item.key} title={item.title} content={parsedPlan[item.key]} delay={item.delay} />;
-                      }
-                      if (item.type === 'paywall_primary') {
-                        return <PaywallCard key={item.key} title={item.title} isPrimary={true} delay={item.delay} />;
-                      }
-                      return <PaywallCard key={item.key} title={item.title} isPrimary={false} delay={item.delay} />;
+                      if (item.type === 'section') return <PlanSection key={item.key} title={item.title} content={parsedPlan[item.key]} delay={item.delay} />;
+                      if (item.type === 'paywall_primary') return <PaywallCard key={item.key} title={item.title} isPrimary={true} delay={item.delay} onRestoreAccess={() => setShowVerifyModal(true)} />;
+                      return <PaywallCard key={item.key} title={item.title} isPrimary={false} delay={item.delay} onRestoreAccess={() => setShowVerifyModal(true)} />;
                     })}
 
-                    {/* Pro tip is paid-only */}
-                    {unlocked && parsedPlan.pro_tip && (
+                    {isPro && parsedPlan.pro_tip && (
                       <div style={{ background: "rgba(232,197,71,0.06)", border: "1.5px solid rgba(232,197,71,0.35)", borderRadius: 10, padding: "20px 22px", marginTop: 8 }}>
                         <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.15em", marginBottom: 10 }}>✦ ELITE INSIDER TIP</div>
                         <div style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.9)", lineHeight: 1.75 }}>{parsedPlan.pro_tip}</div>
@@ -968,21 +787,11 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       );
     }
 
-    /* ============================================================
-       ERROR BOUNDARY + APP ROOT
-       ============================================================ */
-
+    // ── Error boundary ────────────────────────────────────────────────────────
     class ErrorBoundary extends React.Component {
-      constructor(props) {
-        super(props);
-        this.state = { hasError: false, resetKey: 0 };
-      }
-      static getDerivedStateFromError() {
-        return { hasError: true };
-      }
-      handleReset() {
-        this.setState(prev => ({ hasError: false, resetKey: prev.resetKey + 1 }));
-      }
+      constructor(props) { super(props); this.state = { hasError: false, resetKey: 0 }; }
+      static getDerivedStateFromError() { return { hasError: true }; }
+      handleReset() { this.setState(prev => ({ hasError: false, resetKey: prev.resetKey + 1 })); }
       render() {
         if (this.state.hasError) {
           return (
@@ -990,7 +799,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
               <div style={{ textAlign: "center", maxWidth: 480 }}>
                 <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 16 }}>PRESSREADY · LAUNCH INTELLIGENCE</div>
                 <h2 style={{ fontFamily: "'Lora', serif", color: "#fff", fontSize: 24, marginBottom: 16 }}>Something went wrong.</h2>
-                <p style={{ fontFamily: "'Lora', serif", color: "rgba(255,255,255,0.55)", fontSize: 15, lineHeight: 1.7, marginBottom: 28 }}>The plan ran into an unexpected error. This is rare — please try generating again.</p>
+                <p style={{ fontFamily: "'Lora', serif", color: "rgba(255,255,255,0.55)", fontSize: 15, lineHeight: 1.7, marginBottom: 28 }}>The plan ran into an unexpected error. Please try generating again.</p>
                 <button onClick={() => this.handleReset()} style={{ padding: "12px 28px", borderRadius: 8, background: "#E8C547", color: "#0D0D0F", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, letterSpacing: "0.12em", cursor: "pointer", textTransform: "uppercase" }}>Try Again</button>
               </div>
             </div>
@@ -1000,22 +809,18 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       }
     }
 
+    // ── App root ──────────────────────────────────────────────────────────────
     function App() {
       const [view, setView] = useState('landing');
-      const { unlocked, sessionId, verifying, verifyError } = useUnlock();
+      const [proState, setProState] = useState(() => readProState());
 
-      // If the user lands on /?session_id=... they came from Stripe — go straight
-      // to the wizard view rather than the landing page so they see the unlocked banner.
-      useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('session_id')) {
-          setView('wizard');
-        }
-      }, []);
+      const handleProVerified = (token, email) => {
+        setProState({ token, email, legacy: false, isPro: true });
+      };
 
       return view === 'landing'
         ? <Landing onStart={() => setView('wizard')} />
-        : <Wizard onBackToLanding={() => setView('landing')} unlocked={unlocked} sessionId={sessionId} verifying={verifying} verifyError={verifyError} />;
+        : <Wizard onBackToLanding={() => setView('landing')} proState={proState} onProVerified={handleProVerified} />;
     }
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
