@@ -52,13 +52,11 @@
     const { useState, useEffect, useRef } = React;
 
     // ── Stripe subscription payment link ─────────────────────────────────────
-    // Replace this with the actual $9.99/month Payment Link you created in Stripe
     const STRIPE_PRO_LINK = "https://buy.stripe.com/aFa7sM9AKcKr9KW3zP6Ri01";
 
     // ── Storage keys ─────────────────────────────────────────────────────────
     const PRO_TOKEN_KEY = "pressready_pro_token_v1";
     const PRO_EMAIL_KEY = "pressready_pro_email_v1";
-    // Legacy key — keeps working for anyone who paid the old $19
     const LEGACY_UNLOCK_KEY = "pressready_unlocked_v1";
 
     // ── Sections visible without Pro ─────────────────────────────────────────
@@ -105,8 +103,11 @@
     ];
 
     // ── Prompt builder ────────────────────────────────────────────────────────
-    function buildPrompt(form) {
-      return `You are PressReady, a launch strategist built by an indie press with 35 books across 7 pen names. You speak operator-to-operator. You do not pad. You do not hype.
+    function buildPrompt(form, strictMode = false) {
+      const strictPreface = strictMode
+        ? `CRITICAL: Your previous response could not be parsed. Return ONLY a valid JSON object. No preamble. No explanation. No markdown code fences. Start your response with { and end with }. Nothing else.\n\n`
+        : '';
+      return `${strictPreface}You are PressReady, a launch strategist built by an indie press with 35 books across 7 pen names. You speak operator-to-operator. You do not pad. You do not hype.
 
 AUTHOR INPUTS:
 - Genre: ${form.genre}
@@ -169,16 +170,16 @@ PROHIBITED:
 OUTPUT FORMAT — return ONLY this JSON, no preamble, no markdown fences:
 {
   "executive_summary": "2-3 sentences max, specific to inputs",
-  "pre_launch": "6-10 bullets, tailored to experience level",
-  "launch_week": "7 days, 2-3 bullets each day, formatted as 'Day 1: ...\\nDay 2: ...'",
-  "pricing_strategy": "5 bullets max, must respect series position rules above",
-  "review_strategy": "6 bullets max",
-  "social_media": "6 bullets max, genre-appropriate platforms only",
-  "algorithm_tips": "6 bullets max",
-  "email_list": "6 bullets max, tailored to list size above",
-  "post_launch": "3 phases, 3 bullets each",
-  "budget_breakdown": "5 bullets max, must respect stated budget",
-  "kpis": "5 bullets max. Each KPI is a metric to track, not a number to forecast.",
+  "pre_launch": "6-10 bullets, each line MUST start with '• '",
+  "launch_week": "7 days, 2-3 bullets each day. Each day MUST start with exactly 'Day 1:', 'Day 2:', etc. Format: 'Day 1: ...\\nDay 2: ...'",
+  "pricing_strategy": "5 bullets max, each starts with '• ', must respect series position rules above",
+  "review_strategy": "6 bullets max, each starts with '• '",
+  "social_media": "6 bullets max, each starts with '• ', genre-appropriate platforms only",
+  "algorithm_tips": "6 bullets max, each starts with '• '",
+  "email_list": "6 bullets max, each starts with '• ', tailored to list size above",
+  "post_launch": "3 phases separated by double newline. Each phase has 3 bullets starting with '• '",
+  "budget_breakdown": "5 bullets max, each starts with '• ', must respect stated budget",
+  "kpis": "5 bullets max, each starts with '• '. Each KPI is a metric to track, not a number to forecast.",
   "pro_tip": "2-3 sentences. Must be specific to this author's inputs. Not generic."
 }
 
@@ -211,10 +212,55 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       return { valid: missing.length === 0, missing };
     }
 
+    // ── Forgiving bullet/day parsers (handles LLM formatting drift) ──────────
+    // Catches: "• Task", "- Task", "* Task", "**Task", "1. Task", "1) Task", or plain text lines
+    function extractBullets(text, max = 3) {
+      if (!text) return [];
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      const bullets = [];
+      for (const line of lines) {
+        // Strip leading markers and any markdown bold/emphasis (including orphans)
+        const cleaned = line
+          .replace(/^[\*\-•]\s*/, '')
+          .replace(/^\d+[\.\)]\s*/, '')
+          .replace(/\*\*(.+?)\*\*/g, '$1')
+          .replace(/\*+/g, '')
+          .trim();
+        if (cleaned && cleaned.length > 2) {
+          bullets.push('• ' + cleaned);
+          if (bullets.length >= max) break;
+        }
+      }
+      return bullets;
+    }
+
+    // Catches: "Day 1:", "DAY 1:", "**Day 1:**", "Day 1 -", "Day1:" — case insensitive
+    function findDayLine(text, dayNum) {
+      if (!text) return null;
+      const lines = text.split('\n');
+      const pattern = new RegExp(`^\\s*\\**\\s*day\\s*${dayNum}\\s*[:\\-–—]`, 'i');
+      const match = lines.find(l => pattern.test(l.replace(/\*+/g, '')));
+      if (!match) return null;
+      return '• ' + match
+        .replace(/\*+/g, '')
+        .replace(new RegExp(`^\\s*day\\s*${dayNum}\\s*[:\\-–—]\\s*`, 'i'), `Day ${dayNum}: `)
+        .trim();
+    }
+
+    // Split post_launch into phases — handles "\n\n", "Phase 1:", "Month 1:", or just three groups of bullets
+    function splitPhases(text) {
+      if (!text) return [];
+      // Try double-newline split first
+      let phases = text.split(/\n\s*\n/).filter(p => p.trim());
+      if (phases.length >= 2) return phases;
+      // Fall back to splitting on "Phase N" or "Month N" headers
+      const headerSplit = text.split(/(?=^\s*(?:phase|month|week)\s*\d+\s*[:\-–—])/im).filter(p => p.trim());
+      if (headerSplit.length >= 2) return headerSplit;
+      // Last resort: treat the whole thing as one phase
+      return [text];
+    }
+
     // ── Pro access state ──────────────────────────────────────────────────────
-    // Pro access comes from:
-    //   1. A valid pro_token in localStorage (issued by /api/verify-subscription)
-    //   2. Legacy: the old $19 unlock flag (honored forever)
     function readProState() {
       try {
         const token = localStorage.getItem(PRO_TOKEN_KEY);
@@ -270,7 +316,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
               subscription_inactive: "Your subscription appears to be inactive or cancelled.",
               stripe_error: "We couldn't verify your subscription right now. Please try again."
             };
-            setError(reasons[data.reason] || "Verification failed. Please try again or contact blackfuegopublishing@proton.me.");
+            setError(reasons[data.reason] || "Verification failed. Please try again or contact pressreadyink@proton.me.");
           }
         } catch (err) {
           setError("Connection error. Please check your internet and try again.");
@@ -342,10 +388,10 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
           </div>
           <h3 style={{ fontFamily: "'Lora', serif", fontSize: 26, color: "#fff", fontWeight: 600, marginBottom: 12, lineHeight: 1.25 }}>Unlock your full launch plan.</h3>
           <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.75)", lineHeight: 1.7, marginBottom: 22 }}>
-            You've seen the strategy overview, pre-launch checklist, launch week tactics, and pricing strategy. The remaining 8 sections — review &amp; ARC strategy, social media plan, algorithm triggers, email list building, post-launch plan, budget breakdown, success metrics, and the Elite Insider Tip — are part of PressReady Pro.
+            You've seen the strategy overview, pre-launch checklist, launch week tactics, and pricing strategy. The remaining 8 sections — review &amp; ARC strategy, social media plan, algorithm triggers, email list building, post-launch plan, budget breakdown, success metrics, and the Operator's Note — are part of PressReady Pro.
           </p>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 26 }}>
-            {["Review & ARC Strategy","Social Media Plan","Algorithm Triggers","Email List Building","Post-Launch Plan","Budget Breakdown","Success Metrics","Elite Insider Tip"].map(s => (
+            {["Review & ARC Strategy","Social Media Plan","Algorithm Triggers","Email List Building","Post-Launch Plan","Budget Breakdown","Success Metrics","Operator's Note"].map(s => (
               <div key={s} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(232,197,71,0.15)", borderRadius: 6, padding: "10px 12px", fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.6)", letterSpacing: "0.05em" }}>
                 🔒 {s}
               </div>
@@ -424,7 +470,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
               <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 16, textAlign: "center" }}>WHAT YOU GET WITH PRO</div>
               <h3 style={{ fontFamily: "'Lora', serif", fontSize: 22, color: "#fff", marginBottom: 28, fontWeight: 600, textAlign: "center" }}>A complete strategy across 12 sections.</h3>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-                {[["Strategy Overview","free"],["Pre-Launch Checklist","free"],["Launch Week Tactics","free"],["Pricing Strategy","free"],["Review & ARC Strategy","pro"],["Social Media Plan","pro"],["Algorithm Triggers","pro"],["Email List Building","pro"],["Post-Launch Plan","pro"],["Budget Breakdown","pro"],["Success Metrics","pro"],["Elite Insider Tip","pro"]].map(([s, tier], i) => (
+                {[["Strategy Overview","free"],["Pre-Launch Checklist","free"],["Launch Week Tactics","free"],["Pricing Strategy","free"],["Review & ARC Strategy","pro"],["Social Media Plan","pro"],["Algorithm Triggers","pro"],["Email List Building","pro"],["Post-Launch Plan","pro"],["Budget Breakdown","pro"],["Success Metrics","pro"],["Operator's Note","pro"]].map(([s, tier], i) => (
                   <div key={s} style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${tier === 'pro' ? 'rgba(232,197,71,0.25)' : 'rgba(232,197,71,0.1)'}`, borderRadius: 6, padding: "12px 14px", fontFamily: "'Space Mono', monospace", fontSize: 11, color: tier === 'pro' ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.5)", letterSpacing: "0.05em" }}>
                     <span style={{ color: "#E8C547", marginRight: 8 }}>{String(i + 1).padStart(2, '0')}</span>
                     {s}
@@ -497,6 +543,22 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       return <TypewriterText key={index} text={LOADING_MESSAGES[index]} />;
     }
 
+    // Long-wait reassurance — kicks in after 25s so users know we're still working
+    function LoadingStatus() {
+      const [elapsed, setElapsed] = useState(0);
+      useEffect(() => {
+        const start = Date.now();
+        const interval = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+        return () => clearInterval(interval);
+      }, []);
+      let message;
+      if (elapsed < 15) message = "This usually takes 10–20 seconds. Please wait...";
+      else if (elapsed < 30) message = "Still working — complex plans take a bit longer...";
+      else if (elapsed < 45) message = "Almost there — building your full 12-section strategy...";
+      else message = "Just a few more seconds...";
+      return <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 13, marginTop: 12, fontStyle: "italic" }}>{message}</div>;
+    }
+
     function PlanSection({ title, content, delay = 0 }) {
       const [visible, setVisible] = useState(false);
       useEffect(() => { const t = setTimeout(() => setVisible(true), delay); return () => clearTimeout(t); }, []);
@@ -562,7 +624,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
     // ── Wizard ────────────────────────────────────────────────────────────────
     const INITIAL_FORM = { genre: "", title: "", series_position: "", experience: "", list_size: "", catalog_size: "", platform: "", budget: "", timeline: "" };
 
-    function Wizard({ onBackToLanding, onDashboard, proState, onProVerified }) {
+    function Wizard({ onBackToLanding, onDashboard, proState, onProVerified, onProRevoked }) {
       const [step, setStep] = useState(0);
       const [form, setForm] = useState(INITIAL_FORM);
       const [loading, setLoading] = useState(false);
@@ -578,11 +640,18 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       const savePlan = async (launchDate) => {
         if (!proState.token || !parsedPlan) return;
         try {
-          await fetch('/api/save-plan', {
+          const res = await fetch('/api/save-plan', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ pro_token: proState.token, plan_data: parsedPlan, form, launch_date: launchDate || null })
           });
+          // If token rejected, downgrade the user
+          if (res.status === 401 || res.status === 403) {
+            clearProToken();
+            if (onProRevoked) onProRevoked();
+            track('pro_token_revoked', { source: 'save-plan' });
+            return;
+          }
           setPlanSaved(true);
         } catch {}
         setShowLaunchDateModal(false);
@@ -602,11 +671,14 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
         }
       };
 
-      const generatePlan = async (retryCount = 0) => {
+      // ── Generate plan with JSON parse retry ────────────────────────────────
+      // Attempt 1: standard prompt
+      // Attempt 2 (if parse fails): strict-mode prompt with stronger format reinforcement
+      const generatePlan = async (retryCount = 0, strictMode = false) => {
         setLoading(true); setError(null); setPlan(null); setParsedPlan(null);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 55000);
-        const prompt = buildPrompt(form);
+        const prompt = buildPrompt(form, strictMode);
 
         try {
           const response = await fetch("/api/generate", {
@@ -618,6 +690,22 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
             }),
             signal: controller.signal
           });
+
+          // Handle Pro token revocation (subscription cancelled, expired, etc.)
+          if (response.status === 401 || response.status === 403) {
+            clearTimeout(timeoutId);
+            clearProToken();
+            if (onProRevoked) onProRevoked();
+            track('pro_token_revoked', { source: 'generate' });
+            setError("Your Pro subscription is no longer active. The free preview still works — generating now.");
+            // Retry once without the token to give them the free preview
+            if (retryCount === 0) {
+              setLoading(false);
+              setTimeout(() => generatePlan(1, false), 100);
+            }
+            return;
+          }
+
           const data = await response.json();
 
           if (data.error) {
@@ -632,14 +720,23 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
           if (parsed) {
             const { valid, missing } = validatePlan(parsed);
             setParsedPlan(parsed);
-            track('plan_generated', { genre: form.genre, experience: form.experience, isPro, valid, missing_count: missing.length });
+            track('plan_generated', { genre: form.genre, experience: form.experience, isPro, valid, missing_count: missing.length, strict_mode: strictMode });
             if (isPro) setShowLaunchDateModal(true);
+          } else if (!strictMode && retryCount === 0) {
+            // Parse failed on first attempt — retry once with strict-mode prompt
+            track('plan_parse_failed_retrying', { genre: form.genre });
+            clearTimeout(timeoutId);
+            setLoading(false);
+            return generatePlan(1, true);
           } else {
+            // Strict retry also failed — show raw output as last resort
             setPlan(raw);
-            track('plan_generated_unparsed', { genre: form.genre });
+            track('plan_generated_unparsed', { genre: form.genre, strict_attempted: strictMode });
           }
         } catch (err) {
-          if (retryCount < 1) { clearTimeout(timeoutId); setLoading(false); return generatePlan(retryCount + 1); }
+          if (retryCount < 1 && err.name !== 'AbortError') {
+            clearTimeout(timeoutId); setLoading(false); return generatePlan(retryCount + 1, strictMode);
+          }
           if (err.name === 'AbortError') {
             setError("Request timed out. Our servers are busy — please try again in a moment.");
             track('generation_error', { reason: 'timeout' });
@@ -657,7 +754,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
         else generatePlan();
       };
 
-      const reset = () => { setStep(0); setForm(INITIAL_FORM); setPlan(null); setParsedPlan(null); setError(null); };
+      const reset = () => { setStep(0); setForm(INITIAL_FORM); setPlan(null); setParsedPlan(null); setError(null); setPlanSaved(false); };
 
       const planText = parsedPlan
         ? Object.entries(parsedPlan).filter(([k]) => isPro || FREE_SECTION_KEYS.has(k)).map(([k, v]) => `${k.toUpperCase().replace(/_/g, " ")}\n${v}`).join("\n\n")
@@ -745,7 +842,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
               <div style={{ textAlign: "center", padding: "48px 0" }}>
                 <div style={{ width: 48, height: 48, borderRadius: "50%", border: "3px solid rgba(232,197,71,0.2)", borderTop: "3px solid #E8C547", margin: "0 auto 24px", animation: "spin 1s linear infinite" }} />
                 <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 12, color: "#E8C547", letterSpacing: "0.15em" }}><RotatingMessage /></div>
-                <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 13, marginTop: 12, fontStyle: "italic" }}>This usually takes 10–20 seconds. Please wait...</div>
+                <LoadingStatus />
               </div>
             )}
 
@@ -801,7 +898,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
 
                     {isPro && parsedPlan.pro_tip && (
                       <div style={{ background: "rgba(232,197,71,0.06)", border: "1.5px solid rgba(232,197,71,0.35)", borderRadius: 10, padding: "20px 22px", marginTop: 8 }}>
-                        <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.15em", marginBottom: 10 }}>✦ ELITE INSIDER TIP</div>
+                        <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.15em", marginBottom: 10 }}>✦ OPERATOR'S NOTE</div>
                         <div style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.9)", lineHeight: 1.75 }}>{parsedPlan.pro_tip}</div>
                       </div>
                     )}
@@ -868,9 +965,10 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
     }
 
     // ── Dashboard ─────────────────────────────────────────────────────────────
-    function Dashboard({ proState, onNewPlan, onBackToLanding }) {
+    function Dashboard({ proState, onNewPlan, onBackToLanding, onProRevoked }) {
       const [plans, setPlans] = useState([]);
       const [loading, setLoading] = useState(true);
+      const [fetchError, setFetchError] = useState(null);
       const [selectedPlan, setSelectedPlan] = useState(null);
 
       useEffect(() => {
@@ -880,9 +978,25 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ pro_token: proState.token })
         })
-          .then(r => r.json())
-          .then(data => { setPlans(data.plans || []); setLoading(false); })
-          .catch(() => setLoading(false));
+          .then(async r => {
+            // Auto-downgrade on token rejection
+            if (r.status === 401 || r.status === 403) {
+              clearProToken();
+              if (onProRevoked) onProRevoked();
+              track('pro_token_revoked', { source: 'get-plans' });
+              setFetchError('Your Pro subscription is no longer active.');
+              return null;
+            }
+            return r.json();
+          })
+          .then(data => {
+            if (data) setPlans(data.plans || []);
+            setLoading(false);
+          })
+          .catch(err => {
+            setFetchError("Couldn't load your plans. Check your connection and try again.");
+            setLoading(false);
+          });
       }, []);
 
       function daysUntilLaunch(launchDate) {
@@ -901,23 +1015,42 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
         return { label: 'COMPLETE', color: 'rgba(255,255,255,0.3)' };
       }
 
+      // ── Today's Focus — uses forgiving parsers so LLM formatting drift doesn't break the panel
       function getTodayTasks(plan, days) {
         if (!plan || days === null) return ['• Set a launch date to see your daily tasks'];
         const pd = plan.plan_data;
+
+        // Pre-launch phase: surface up to 3 actionable bullets from pre_launch
         if (days > 14) {
-          return (pd.pre_launch || '').split('\n').filter(l => l.trim().startsWith('•')).slice(0, 3);
+          const bullets = extractBullets(pd.pre_launch, 3);
+          return bullets.length ? bullets : ['• Review your pre-launch checklist above'];
         }
+
+        // Launch week: find the day line, fall back to the first available day
         if (days >= 0 && days <= 7) {
           const dayNum = 7 - days + 1;
-          const lines = (pd.launch_week || '').split('\n');
-          const dayLine = lines.find(l => l.startsWith(`Day ${dayNum}:`));
-          return dayLine ? [dayLine] : ['• Execute today\'s launch week tactic'];
+          const dayLine = findDayLine(pd.launch_week, dayNum);
+          if (dayLine) return [dayLine];
+          // Fall back: try adjacent day numbers in case numbering drifted
+          for (const altDay of [dayNum - 1, dayNum + 1, 1, 2]) {
+            const alt = findDayLine(pd.launch_week, altDay);
+            if (alt) return [alt];
+          }
+          // Last resort: pull the first 2 bullets from launch_week
+          const bullets = extractBullets(pd.launch_week, 2);
+          return bullets.length ? bullets : ['• Execute today\'s launch week tactic — see Launch Week section above'];
         }
+
+        // Post-launch: pick the right phase chunk based on days elapsed
         if (days < 0 && days > -30) {
-          const phase = Math.abs(days) <= 10 ? 0 : Math.abs(days) <= 20 ? 1 : 2;
-          const phases = (pd.post_launch || '').split('\n\n');
-          return (phases[phase] || '').split('\n').filter(l => l.trim().startsWith('•')).slice(0, 2);
+          const elapsed = Math.abs(days);
+          const phaseIdx = elapsed <= 10 ? 0 : elapsed <= 20 ? 1 : 2;
+          const phases = splitPhases(pd.post_launch);
+          const phaseText = phases[phaseIdx] || phases[phases.length - 1] || pd.post_launch;
+          const bullets = extractBullets(phaseText, 2);
+          return bullets.length ? bullets : ['• Review your post-launch plan above'];
         }
+
         return ['• Your launch is complete — plan your next book'];
       }
 
@@ -959,7 +1092,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
               </div>
             ))}
             {pd.pro_tip && <div style={{ width: "100%", maxWidth: 680, background: "rgba(232,197,71,0.06)", border: "1.5px solid rgba(232,197,71,0.35)", borderRadius: 10, padding: "20px 22px" }}>
-              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.15em", marginBottom: 10 }}>✦ ELITE INSIDER TIP</div>
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.15em", marginBottom: 10 }}>✦ OPERATOR'S NOTE</div>
               <div style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.9)", lineHeight: 1.75 }}>{pd.pro_tip}</div>
             </div>}
           </div>
@@ -979,7 +1112,10 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
             </div>
           </div>
           {loading && <div style={{ color: "rgba(255,255,255,0.4)", fontFamily: "'Space Mono', monospace", fontSize: 12, marginTop: 60 }}>LOADING YOUR LAUNCHES...</div>}
-          {!loading && plans.length === 0 && (
+          {!loading && fetchError && (
+            <div style={{ color: "#ff8a8a", fontFamily: "'Space Mono', monospace", fontSize: 12, marginTop: 40, textAlign: "center", maxWidth: 480 }}>{fetchError}</div>
+          )}
+          {!loading && !fetchError && plans.length === 0 && (
             <div style={{ width: "100%", maxWidth: 680, textAlign: "center", padding: "60px 24px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14 }}>
               <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 16 }}>NO LAUNCHES YET</div>
               <h3 style={{ fontFamily: "'Lora', serif", fontSize: 22, color: "#fff", marginBottom: 12, fontWeight: 600 }}>Generate your first plan to get started.</h3>
@@ -1025,11 +1161,16 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
         setProState({ token, email, legacy: false, isPro: true });
       };
 
+      // Called when backend rejects the token (subscription cancelled, expired, tampered)
+      const handleProRevoked = () => {
+        setProState({ token: null, email: null, legacy: false, isPro: false });
+      };
+
       return view === 'landing'
         ? <Landing onStart={() => setView('wizard')} onDashboard={() => setView('dashboard')} proState={proState} />
         : view === 'dashboard'
-        ? <Dashboard proState={proState} onNewPlan={() => setView('wizard')} onBackToLanding={() => setView('landing')} />
-        : <Wizard onBackToLanding={() => setView('landing')} onDashboard={() => setView('dashboard')} proState={proState} onProVerified={handleProVerified} />;
+        ? <Dashboard proState={proState} onNewPlan={() => setView('wizard')} onBackToLanding={() => setView('landing')} onProRevoked={handleProRevoked} />
+        : <Wizard onBackToLanding={() => setView('landing')} onDashboard={() => setView('dashboard')} proState={proState} onProVerified={handleProVerified} onProRevoked={handleProRevoked} />;
     }
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
