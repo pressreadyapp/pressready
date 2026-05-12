@@ -51,12 +51,16 @@
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    // ── Stripe subscription payment link ─────────────────────────────────────
+    // ── Stripe payment links ─────────────────────────────────────────────────
+    // SUBSCRIPTION: existing $9.99/mo link
     const STRIPE_PRO_LINK = "https://buy.stripe.com/aFa7sM9AKcKr9KW3zP6Ri01";
+    // ONE-TIME: $19 single-book unlock — REPLACE WITH YOUR ACTUAL STRIPE LINK
+    const STRIPE_ONETIME_LINK = "https://buy.stripe.com/9B66oI6oy4dV3mydap6Ri02";
 
     // ── Storage keys ─────────────────────────────────────────────────────────
     const PRO_TOKEN_KEY = "pressready_pro_token_v1";
     const PRO_EMAIL_KEY = "pressready_pro_email_v1";
+    const PRO_TIER_KEY  = "pressready_pro_tier_v1"; // "subscription" | "onetime"
     const LEGACY_UNLOCK_KEY = "pressready_unlocked_v1";
 
     // ── Sections visible without Pro ─────────────────────────────────────────
@@ -212,14 +216,11 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       return { valid: missing.length === 0, missing };
     }
 
-    // ── Forgiving bullet/day parsers (handles LLM formatting drift) ──────────
-    // Catches: "• Task", "- Task", "* Task", "**Task", "1. Task", "1) Task", or plain text lines
     function extractBullets(text, max = 3) {
       if (!text) return [];
       const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
       const bullets = [];
       for (const line of lines) {
-        // Strip leading markers and any markdown bold/emphasis (including orphans)
         const cleaned = line
           .replace(/^[\*\-•]\s*/, '')
           .replace(/^\d+[\.\)]\s*/, '')
@@ -234,7 +235,6 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       return bullets;
     }
 
-    // Catches: "Day 1:", "DAY 1:", "**Day 1:**", "Day 1 -", "Day1:" — case insensitive
     function findDayLine(text, dayNum) {
       if (!text) return null;
       const lines = text.split('\n');
@@ -247,16 +247,12 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
         .trim();
     }
 
-    // Split post_launch into phases — handles "\n\n", "Phase 1:", "Month 1:", or just three groups of bullets
     function splitPhases(text) {
       if (!text) return [];
-      // Try double-newline split first
       let phases = text.split(/\n\s*\n/).filter(p => p.trim());
       if (phases.length >= 2) return phases;
-      // Fall back to splitting on "Phase N" or "Month N" headers
       const headerSplit = text.split(/(?=^\s*(?:phase|month|week)\s*\d+\s*[:\-–—])/im).filter(p => p.trim());
       if (headerSplit.length >= 2) return headerSplit;
-      // Last resort: treat the whole thing as one phase
       return [text];
     }
 
@@ -265,17 +261,19 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       try {
         const token = localStorage.getItem(PRO_TOKEN_KEY);
         const email = localStorage.getItem(PRO_EMAIL_KEY);
+        const tier  = localStorage.getItem(PRO_TIER_KEY) || (token ? "subscription" : null);
         const legacy = localStorage.getItem(LEGACY_UNLOCK_KEY) === 'true';
-        return { token, email, legacy, isPro: !!(token || legacy) };
+        return { token, email, tier, legacy, isPro: !!(token || legacy) };
       } catch {
-        return { token: null, email: null, legacy: false, isPro: false };
+        return { token: null, email: null, tier: null, legacy: false, isPro: false };
       }
     }
 
-    function writeProToken(token, email) {
+    function writeProToken(token, email, tier) {
       try {
         localStorage.setItem(PRO_TOKEN_KEY, token);
         if (email) localStorage.setItem(PRO_EMAIL_KEY, email);
+        if (tier)  localStorage.setItem(PRO_TIER_KEY, tier);
       } catch {}
     }
 
@@ -283,10 +281,13 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       try {
         localStorage.removeItem(PRO_TOKEN_KEY);
         localStorage.removeItem(PRO_EMAIL_KEY);
+        localStorage.removeItem(PRO_TIER_KEY);
       } catch {}
     }
 
     // ── Email verification modal ──────────────────────────────────────────────
+    // Backend should check BOTH active subscriptions AND completed one-time payments.
+    // Response shape: { active: true, token, email, tier: "subscription" | "onetime" }
     function VerifyModal({ onSuccess, onClose }) {
       const [email, setEmail] = useState("");
       const [loading, setLoading] = useState(false);
@@ -307,14 +308,16 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
           });
           const data = await res.json();
           if (data.active && data.token) {
-            writeProToken(data.token, data.email);
-            track('pro_verified', { email: data.email });
-            onSuccess(data.token, data.email);
+            const tier = data.tier || "subscription";
+            writeProToken(data.token, data.email, tier);
+            track('pro_verified', { email: data.email, tier });
+            onSuccess(data.token, data.email, tier);
           } else {
             const reasons = {
-              no_subscription: "No active Pro subscription found for that email. If you just subscribed, wait a moment and try again.",
+              no_subscription: "No active Pro access found for that email. If you just purchased, wait a moment and try again.",
               subscription_inactive: "Your subscription appears to be inactive or cancelled.",
-              stripe_error: "We couldn't verify your subscription right now. Please try again."
+              onetime_expired: "Your one-time access has expired. Subscribe for unlimited plans or purchase another single-book unlock.",
+              stripe_error: "We couldn't verify your purchase right now. Please try again."
             };
             setError(reasons[data.reason] || "Verification failed. Please try again or contact pressreadyink@proton.me.");
           }
@@ -328,9 +331,9 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       return (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "16px" }}>
           <div style={{ background: "#141416", border: "1.5px solid rgba(232,197,71,0.3)", borderRadius: 16, padding: "36px 32px", maxWidth: 440, width: "100%", animation: "modalIn 0.25s ease" }}>
-            <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 16 }}>PRESSREADY PRO</div>
-            <h3 style={{ fontFamily: "'Lora', serif", fontSize: 22, color: "#fff", fontWeight: 600, marginBottom: 10, lineHeight: 1.3 }}>Already a subscriber?</h3>
-            <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.6)", lineHeight: 1.7, marginBottom: 24 }}>Enter the email you used when you subscribed to restore full access on this device.</p>
+            <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 16 }}>RESTORE ACCESS</div>
+            <h3 style={{ fontFamily: "'Lora', serif", fontSize: 22, color: "#fff", fontWeight: 600, marginBottom: 10, lineHeight: 1.3 }}>Already purchased?</h3>
+            <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.6)", lineHeight: 1.7, marginBottom: 24 }}>Enter the email you used at checkout — works for both subscriptions and one-time purchases.</p>
             <input
               type="email"
               placeholder="your@email.com"
@@ -360,10 +363,15 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       );
     }
 
-    // ── Paywall card ──────────────────────────────────────────────────────────
+    // ── Paywall card with BOTH pricing options ───────────────────────────────
     function PaywallCard({ title, isPrimary = false, delay = 0, onRestoreAccess }) {
       const [visible, setVisible] = useState(false);
       useEffect(() => { const t = setTimeout(() => setVisible(true), delay); return () => clearTimeout(t); }, []);
+
+      const handleOnetime = () => {
+        track('pro_onetime_clicked', { from_section: title });
+        window.open(STRIPE_ONETIME_LINK, '_blank');
+      };
 
       const handleSubscribe = () => {
         track('pro_subscribe_clicked', { from_section: title });
@@ -375,7 +383,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
           <div style={{ opacity: visible ? 1 : 0, transition: "opacity 0.5s ease", marginBottom: 16, borderLeft: "3px solid rgba(232,197,71,0.25)", paddingLeft: 18, paddingTop: 4, paddingBottom: 4 }}>
             <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(232,197,71,0.5)", letterSpacing: "0.15em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontSize: 13 }}>🔒</span>{title}
-              <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", letterSpacing: "0.1em" }}>— PRO ONLY</span>
+              <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", letterSpacing: "0.1em" }}>— LOCKED</span>
             </div>
           </div>
         );
@@ -384,41 +392,77 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       return (
         <div style={{ opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(16px)", transition: "all 0.5s ease", marginBottom: 28, marginTop: 16, padding: "32px 28px", background: "linear-gradient(135deg, rgba(232,197,71,0.08), rgba(232,197,71,0.02))", border: "1.5px solid rgba(232,197,71,0.4)", borderRadius: 14 }}>
           <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 14 }}>
-            🔒 8 SECTIONS · PRO ONLY
+            🔒 8 SECTIONS LOCKED · UNLOCK BELOW
           </div>
           <h3 style={{ fontFamily: "'Lora', serif", fontSize: 26, color: "#fff", fontWeight: 600, marginBottom: 12, lineHeight: 1.25 }}>Unlock your full launch plan.</h3>
           <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.75)", lineHeight: 1.7, marginBottom: 22 }}>
-            You've seen the strategy overview, pre-launch checklist, launch week tactics, and pricing strategy. The remaining 8 sections — review &amp; ARC strategy, social media plan, algorithm triggers, email list building, post-launch plan, budget breakdown, success metrics, and the Operator's Note — are part of PressReady Pro.
+            You've seen the strategy overview, pre-launch checklist, launch week tactics, and pricing strategy. The remaining 8 sections — review &amp; ARC strategy, social media plan, algorithm triggers, email list building, post-launch plan, budget breakdown, success metrics, and the Operator's Note — are behind the unlock.
           </p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 26 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 28 }}>
             {["Review & ARC Strategy","Social Media Plan","Algorithm Triggers","Email List Building","Post-Launch Plan","Budget Breakdown","Success Metrics","Operator's Note"].map(s => (
               <div key={s} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(232,197,71,0.15)", borderRadius: 6, padding: "10px 12px", fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.6)", letterSpacing: "0.05em" }}>
                 🔒 {s}
               </div>
             ))}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 16 }}>
-            <button onClick={handleSubscribe} style={{ padding: "16px 36px", borderRadius: 10, background: "#E8C547", color: "#0D0D0F", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", cursor: "pointer", textTransform: "uppercase" }}>
-              Subscribe — $9.99/mo
-            </button>
-            <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: "0.08em", lineHeight: 1.5 }}>
-              Unlimited plans · Full 12 sections<br/>Cancel anytime
+
+          {/* TWO-TIER PRICING — one-time first as the default, subscription as upgrade */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14, marginBottom: 20 }}>
+
+            {/* ONE-TIME — primary option for most authors */}
+            <div style={{ background: "rgba(232,197,71,0.06)", border: "2px solid rgba(232,197,71,0.5)", borderRadius: 12, padding: "20px 18px", position: "relative" }}>
+              <div style={{ position: "absolute", top: -10, right: 16, background: "#E8C547", color: "#0D0D0F", padding: "3px 10px", borderRadius: 4, fontFamily: "'Space Mono', monospace", fontSize: 9, fontWeight: 700, letterSpacing: "0.1em" }}>
+                MOST AUTHORS
+              </div>
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.15em", marginBottom: 8 }}>ONE BOOK</div>
+              <div style={{ fontFamily: "'Lora', serif", fontSize: 32, color: "#fff", fontWeight: 600, marginBottom: 4 }}>$19</div>
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.05em", marginBottom: 14, lineHeight: 1.5 }}>
+                One-time payment<br/>Full 12 sections · This launch
+              </div>
+              <button onClick={handleOnetime} style={{ width: "100%", padding: "12px", borderRadius: 8, background: "#E8C547", color: "#0D0D0F", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", cursor: "pointer", textTransform: "uppercase" }}>
+                Unlock This Book →
+              </button>
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "rgba(255,255,255,0.4)", marginTop: 10, lineHeight: 1.5 }}>
+                Includes PDF download &amp; 90 days dashboard access
+              </div>
             </div>
+
+            {/* SUBSCRIPTION — upgrade path for multi-book authors */}
+            <div style={{ background: "rgba(255,255,255,0.03)", border: "1.5px solid rgba(255,255,255,0.15)", borderRadius: 12, padding: "20px 18px" }}>
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(232,197,71,0.7)", letterSpacing: "0.15em", marginBottom: 8 }}>UNLIMITED</div>
+              <div style={{ fontFamily: "'Lora', serif", fontSize: 32, color: "#fff", fontWeight: 600, marginBottom: 4 }}>$9.99<span style={{ fontSize: 14, color: "rgba(255,255,255,0.5)" }}>/mo</span></div>
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.05em", marginBottom: 14, lineHeight: 1.5 }}>
+                Unlimited plans · Multi-book authors<br/>Full dashboard · Cancel anytime
+              </div>
+              <button onClick={handleSubscribe} style={{ width: "100%", padding: "12px", borderRadius: 8, background: "transparent", color: "#E8C547", border: "1.5px solid rgba(232,197,71,0.5)", fontFamily: "'Space Mono', monospace", fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", cursor: "pointer", textTransform: "uppercase" }}>
+                Subscribe →
+              </button>
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 9, color: "rgba(255,255,255,0.4)", marginTop: 10, lineHeight: 1.5 }}>
+                Pays for itself after 2 books
+              </div>
+            </div>
+
           </div>
+
           <button onClick={onRestoreAccess} style={{ background: "transparent", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(232,197,71,0.6)", letterSpacing: "0.1em", cursor: "pointer", textDecoration: "underline", padding: 0 }}>
-            Already a subscriber? Restore access →
+            Already purchased? Restore access →
           </button>
         </div>
       );
     }
 
-    // ── Presentational components ─────────────────────────────────────────────
+    // ── Landing ───────────────────────────────────────────────────────────────
     function Landing({ onStart, onDashboard, proState }) {
       return (
         <div style={{ minHeight: "100vh", background: "#0D0D0F", backgroundImage: "radial-gradient(ellipse at 30% 0%, rgba(232,197,71,0.08) 0%, transparent 55%), radial-gradient(ellipse at 80% 90%, rgba(232,197,71,0.04) 0%, transparent 50%)", color: "#fff", fontFamily: "'Lora', Georgia, serif", padding: "0 16px 80px" }}>
           <div style={{ maxWidth: 920, margin: "0 auto" }}>
-            <div style={{ paddingTop: 40, animation: "fadeUp 0.5s ease both" }}>
+            <div style={{ paddingTop: 40, animation: "fadeUp 0.5s ease both", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
               <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.3em", textTransform: "uppercase", opacity: 0.8 }}>PressReady · Launch Intelligence</div>
+              <div style={{ display: "flex", gap: 10, fontFamily: "'Space Mono', monospace", fontSize: 10, letterSpacing: "0.1em" }}>
+                <a href="#pricing" style={{ color: "rgba(255,255,255,0.5)", textDecoration: "none" }}>PRICING</a>
+                <span style={{ color: "rgba(255,255,255,0.2)" }}>·</span>
+                <a href="/about-the-name" style={{ color: "rgba(255,255,255,0.5)", textDecoration: "none" }}>ABOUT THE NAME</a>
+              </div>
             </div>
             <div style={{ paddingTop: 80, paddingBottom: 48, animation: "fadeUp 0.6s ease 0.1s both" }}>
               <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(232,197,71,0.8)", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 24 }}>For indie authors who actually publish</div>
@@ -466,28 +510,84 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
               <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.7)", lineHeight: 1.8 }}>Most launch advice online is recycled, written by people who've never sold a book they wrote themselves. PressReady was built so authors don't have to figure it out the hard way over six years and 35 books.</p>
               <div style={{ marginTop: 24, fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(232,197,71,0.7)", letterSpacing: "0.1em" }}>— Black Fuego Press</div>
             </div>
+
+            {/* NEW: PRICING SECTION — visible above the wizard CTA */}
+            <div id="pricing" style={{ marginBottom: 60, animation: "fadeUp 0.7s ease 0.45s both" }}>
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 16, textAlign: "center" }}>PRICING</div>
+              <h3 style={{ fontFamily: "'Lora', serif", fontSize: 28, color: "#fff", marginBottom: 8, fontWeight: 600, textAlign: "center" }}>Two ways to unlock.</h3>
+              <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.55)", textAlign: "center", marginBottom: 40, lineHeight: 1.7 }}>
+                Launching one book? Pay once. Publishing a catalog? Subscribe.
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 18 }}>
+
+                {/* One-time card */}
+                <div style={{ background: "linear-gradient(135deg, rgba(232,197,71,0.08), rgba(232,197,71,0.02))", border: "2px solid rgba(232,197,71,0.4)", borderRadius: 14, padding: "32px 28px", position: "relative" }}>
+                  <div style={{ position: "absolute", top: -12, left: 20, background: "#E8C547", color: "#0D0D0F", padding: "4px 12px", borderRadius: 4, fontFamily: "'Space Mono', monospace", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em" }}>
+                    MOST AUTHORS
+                  </div>
+                  <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "#E8C547", letterSpacing: "0.18em", marginBottom: 12 }}>ONE BOOK</div>
+                  <div style={{ fontFamily: "'Lora', serif", fontSize: 44, color: "#fff", fontWeight: 600, marginBottom: 2 }}>$19</div>
+                  <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: "0.05em", marginBottom: 22 }}>One-time payment</div>
+                  <div style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.75)", lineHeight: 1.8 }}>
+                    <div style={{ marginBottom: 8 }}>✓ Full 12-section launch plan</div>
+                    <div style={{ marginBottom: 8 }}>✓ Save to dashboard for 90 days</div>
+                    <div style={{ marginBottom: 8 }}>✓ Countdown &amp; phase tracking</div>
+                    <div style={{ marginBottom: 8 }}>✓ PDF download</div>
+                    <div style={{ marginBottom: 8, color: "rgba(255,255,255,0.5)" }}>— No recurring charges</div>
+                  </div>
+                  <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 20, letterSpacing: "0.05em", lineHeight: 1.6 }}>
+                    Best for: launching one book in the next 90 days.
+                  </div>
+                </div>
+
+                {/* Subscription card */}
+                <div style={{ background: "rgba(255,255,255,0.03)", border: "1.5px solid rgba(255,255,255,0.12)", borderRadius: 14, padding: "32px 28px" }}>
+                  <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(232,197,71,0.7)", letterSpacing: "0.18em", marginBottom: 12 }}>UNLIMITED</div>
+                  <div style={{ fontFamily: "'Lora', serif", fontSize: 44, color: "#fff", fontWeight: 600, marginBottom: 2 }}>$9.99<span style={{ fontSize: 18, color: "rgba(255,255,255,0.5)" }}>/mo</span></div>
+                  <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: "0.05em", marginBottom: 22 }}>Cancel anytime</div>
+                  <div style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.75)", lineHeight: 1.8 }}>
+                    <div style={{ marginBottom: 8 }}>✓ Unlimited launch plans</div>
+                    <div style={{ marginBottom: 8 }}>✓ Permanent dashboard access</div>
+                    <div style={{ marginBottom: 8 }}>✓ Track multiple books at once</div>
+                    <div style={{ marginBottom: 8 }}>✓ PDF download on every plan</div>
+                    <div style={{ marginBottom: 8, color: "rgba(255,255,255,0.5)" }}>— Pays for itself after 2 books</div>
+                  </div>
+                  <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 20, letterSpacing: "0.05em", lineHeight: 1.6 }}>
+                    Best for: publishing 2+ books per year.
+                  </div>
+                </div>
+
+              </div>
+              <div style={{ textAlign: "center", marginTop: 28 }}>
+                <button onClick={onStart} style={{ padding: "14px 32px", borderRadius: 8, background: "transparent", color: "#E8C547", border: "1.5px solid rgba(232,197,71,0.5)", fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, letterSpacing: "0.12em", cursor: "pointer", textTransform: "uppercase" }}>
+                  Try the Free Preview First →
+                </button>
+              </div>
+            </div>
+
             <div style={{ marginBottom: 60, animation: "fadeUp 0.7s ease 0.5s both" }}>
-              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 16, textAlign: "center" }}>WHAT YOU GET WITH PRO</div>
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 16, textAlign: "center" }}>WHAT YOU GET</div>
               <h3 style={{ fontFamily: "'Lora', serif", fontSize: 22, color: "#fff", marginBottom: 28, fontWeight: 600, textAlign: "center" }}>A complete strategy across 12 sections.</h3>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
                 {[["Strategy Overview","free"],["Pre-Launch Checklist","free"],["Launch Week Tactics","free"],["Pricing Strategy","free"],["Review & ARC Strategy","pro"],["Social Media Plan","pro"],["Algorithm Triggers","pro"],["Email List Building","pro"],["Post-Launch Plan","pro"],["Budget Breakdown","pro"],["Success Metrics","pro"],["Operator's Note","pro"]].map(([s, tier], i) => (
                   <div key={s} style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${tier === 'pro' ? 'rgba(232,197,71,0.25)' : 'rgba(232,197,71,0.1)'}`, borderRadius: 6, padding: "12px 14px", fontFamily: "'Space Mono', monospace", fontSize: 11, color: tier === 'pro' ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.5)", letterSpacing: "0.05em" }}>
                     <span style={{ color: "#E8C547", marginRight: 8 }}>{String(i + 1).padStart(2, '0')}</span>
                     {s}
-                    {tier === 'pro' && <span style={{ marginLeft: 6, fontSize: 9, color: "rgba(232,197,71,0.6)", letterSpacing: "0.1em" }}>PRO</span>}
+                    {tier === 'pro' && <span style={{ marginLeft: 6, fontSize: 9, color: "rgba(232,197,71,0.6)", letterSpacing: "0.1em" }}>UNLOCK</span>}
                   </div>
                 ))}
               </div>
             </div>
             <div style={{ textAlign: "center", padding: "60px 24px", background: "rgba(232,197,71,0.04)", border: "1px solid rgba(232,197,71,0.15)", borderRadius: 14, animation: "fadeUp 0.7s ease 0.6s both" }}>
               <h3 style={{ fontFamily: "'Lora', serif", fontSize: 28, color: "#fff", fontWeight: 600, marginBottom: 14, lineHeight: 1.3 }}>Got a book? <span style={{ fontStyle: "italic", color: "#E8C547" }}>Get a plan.</span></h3>
-              <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.55)", marginBottom: 28 }}>Six quick questions. One real strategy. No email required.</p>
+              <p style={{ fontFamily: "'Lora', serif", fontSize: 15, color: "rgba(255,255,255,0.55)", marginBottom: 28 }}>Six quick questions. One real strategy. No email required for the preview.</p>
               <button onClick={onStart} style={{ padding: "16px 36px", borderRadius: 10, background: "#E8C547", color: "#0D0D0F", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", cursor: "pointer", textTransform: "uppercase" }}>Generate Your Plan →</button>
             </div>
             <div style={{ marginTop: 60, paddingTop: 32, borderTop: "1px solid rgba(255,255,255,0.06)", textAlign: "center", fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.25)", letterSpacing: "0.15em", animation: "fadeIn 1s ease 0.8s both" }}>
               POWERED BY PRESSREADY · LAUNCH INTELLIGENCE<br/>
               <span style={{ marginTop: 8, display: "inline-block", opacity: 0.7 }}>A Black Fuego Press Project</span><br/>
-              <span style={{ marginTop: 6, display: "inline-block", opacity: 0.5 }}>Support: pressreadyink@proton.me</span>
+              <span style={{ marginTop: 6, display: "inline-block", opacity: 0.5 }}>Support: pressreadyink@proton.me</span><br/>
+              <a href="/about-the-name" style={{ marginTop: 8, display: "inline-block", opacity: 0.5, color: "rgba(232,197,71,0.6)", textDecoration: "none", fontSize: 10 }}>About the name →</a>
             </div>
           </div>
         </div>
@@ -543,7 +643,6 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       return <TypewriterText key={index} text={LOADING_MESSAGES[index]} />;
     }
 
-    // Long-wait reassurance — kicks in after 25s so users know we're still working
     function LoadingStatus() {
       const [elapsed, setElapsed] = useState(0);
       useEffect(() => {
@@ -621,7 +720,6 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       );
     }
 
-    // ── Wizard ────────────────────────────────────────────────────────────────
     const INITIAL_FORM = { genre: "", title: "", series_position: "", experience: "", list_size: "", catalog_size: "", platform: "", budget: "", timeline: "" };
 
     function Wizard({ onBackToLanding, onDashboard, proState, onProVerified, onProRevoked }) {
@@ -645,7 +743,6 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ pro_token: proState.token, plan_data: parsedPlan, form, launch_date: launchDate || null })
           });
-          // If token rejected, downgrade the user
           if (res.status === 401 || res.status === 403) {
             clearProToken();
             if (onProRevoked) onProRevoked();
@@ -671,9 +768,6 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
         }
       };
 
-      // ── Generate plan with JSON parse retry ────────────────────────────────
-      // Attempt 1: standard prompt
-      // Attempt 2 (if parse fails): strict-mode prompt with stronger format reinforcement
       const generatePlan = async (retryCount = 0, strictMode = false) => {
         setLoading(true); setError(null); setPlan(null); setParsedPlan(null);
         const controller = new AbortController();
@@ -691,14 +785,12 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
             signal: controller.signal
           });
 
-          // Handle Pro token revocation (subscription cancelled, expired, etc.)
           if (response.status === 401 || response.status === 403) {
             clearTimeout(timeoutId);
             clearProToken();
             if (onProRevoked) onProRevoked();
             track('pro_token_revoked', { source: 'generate' });
-            setError("Your Pro subscription is no longer active. The free preview still works — generating now.");
-            // Retry once without the token to give them the free preview
+            setError("Your access is no longer active. The free preview still works — generating now.");
             if (retryCount === 0) {
               setLoading(false);
               setTimeout(() => generatePlan(1, false), 100);
@@ -723,13 +815,11 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
             track('plan_generated', { genre: form.genre, experience: form.experience, isPro, valid, missing_count: missing.length, strict_mode: strictMode });
             if (isPro) setShowLaunchDateModal(true);
           } else if (!strictMode && retryCount === 0) {
-            // Parse failed on first attempt — retry once with strict-mode prompt
             track('plan_parse_failed_retrying', { genre: form.genre });
             clearTimeout(timeoutId);
             setLoading(false);
             return generatePlan(1, true);
           } else {
-            // Strict retry also failed — show raw output as last resort
             setPlan(raw);
             track('plan_generated_unparsed', { genre: form.genre, strict_attempted: strictMode });
           }
@@ -791,7 +881,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
         <div style={{ minHeight: "100vh", background: "#0D0D0F", backgroundImage: "radial-gradient(ellipse at 20% 20%, rgba(232,197,71,0.06) 0%, transparent 60%)", fontFamily: "'Lora', Georgia, serif", padding: "0 16px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
           {showVerifyModal && (
             <VerifyModal
-              onSuccess={(token, email) => { onProVerified(token, email); setShowVerifyModal(false); }}
+              onSuccess={(token, email, tier) => { onProVerified(token, email, tier); setShowVerifyModal(false); }}
               onClose={() => setShowVerifyModal(false)}
             />
           )}
@@ -806,7 +896,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
             <div>
               <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.3em", textTransform: "uppercase", marginBottom: 12, opacity: 0.8 }}>
                 PressReady · Launch Intelligence
-                {isPro && <span style={{ marginLeft: 12, color: "rgba(232,197,71,0.8)", fontSize: 9 }}>· PRO</span>}
+                {isPro && <span style={{ marginLeft: 12, color: "rgba(232,197,71,0.8)", fontSize: 9 }}>· {proState.tier === 'onetime' ? 'UNLOCKED' : 'PRO'}</span>}
               </div>
               <h1 style={{ fontSize: "clamp(28px, 5vw, 44px)", fontWeight: 600, color: "#FFFFFF", margin: 0, lineHeight: 1.15, fontFamily: "'Lora', Georgia, serif" }}>
                 Press<span style={{ fontStyle: "italic", color: "#E8C547" }}>Ready</span>
@@ -858,7 +948,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
                 <div className="no-print" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 32, flexWrap: "wrap", gap: 12 }}>
                   <div>
                     <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 6 }}>
-                      LAUNCH PLAN {isPro ? "· PRO" : "PREVIEW"}
+                      LAUNCH PLAN {isPro ? (proState.tier === 'onetime' ? "· UNLOCKED" : "· PRO") : "PREVIEW"}
                     </div>
                     <h2 style={{ fontFamily: "'Lora', serif", color: "#fff", fontSize: 22, margin: 0, fontWeight: 600 }}>{form.title}</h2>
                     <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>{form.genre} · {form.series_position} · {form.platform} · {form.timeline}</div>
@@ -919,7 +1009,6 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       );
     }
 
-    // ── Error boundary ────────────────────────────────────────────────────────
     class ErrorBoundary extends React.Component {
       constructor(props) { super(props); this.state = { hasError: false, resetKey: 0 }; }
       static getDerivedStateFromError() { return { hasError: true }; }
@@ -941,7 +1030,6 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       }
     }
 
-    // ── Launch Date Modal ─────────────────────────────────────────────────────
     function LaunchDateModal({ onSave, onSkip }) {
       const [date, setDate] = useState('');
       const today = new Date().toISOString().split('T')[0];
@@ -964,7 +1052,6 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       );
     }
 
-    // ── Dashboard ─────────────────────────────────────────────────────────────
     function Dashboard({ proState, onNewPlan, onBackToLanding, onProRevoked }) {
       const [plans, setPlans] = useState([]);
       const [loading, setLoading] = useState(true);
@@ -979,12 +1066,11 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
           body: JSON.stringify({ pro_token: proState.token })
         })
           .then(async r => {
-            // Auto-downgrade on token rejection
             if (r.status === 401 || r.status === 403) {
               clearProToken();
               if (onProRevoked) onProRevoked();
               track('pro_token_revoked', { source: 'get-plans' });
-              setFetchError('Your Pro subscription is no longer active.');
+              setFetchError('Your access is no longer active.');
               return null;
             }
             return r.json();
@@ -1015,33 +1101,27 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
         return { label: 'COMPLETE', color: 'rgba(255,255,255,0.3)' };
       }
 
-      // ── Today's Focus — uses forgiving parsers so LLM formatting drift doesn't break the panel
       function getTodayTasks(plan, days) {
         if (!plan || days === null) return ['• Set a launch date to see your daily tasks'];
         const pd = plan.plan_data;
 
-        // Pre-launch phase: surface up to 3 actionable bullets from pre_launch
         if (days > 14) {
           const bullets = extractBullets(pd.pre_launch, 3);
           return bullets.length ? bullets : ['• Review your pre-launch checklist above'];
         }
 
-        // Launch week: find the day line, fall back to the first available day
         if (days >= 0 && days <= 7) {
           const dayNum = 7 - days + 1;
           const dayLine = findDayLine(pd.launch_week, dayNum);
           if (dayLine) return [dayLine];
-          // Fall back: try adjacent day numbers in case numbering drifted
           for (const altDay of [dayNum - 1, dayNum + 1, 1, 2]) {
             const alt = findDayLine(pd.launch_week, altDay);
             if (alt) return [alt];
           }
-          // Last resort: pull the first 2 bullets from launch_week
           const bullets = extractBullets(pd.launch_week, 2);
           return bullets.length ? bullets : ['• Execute today\'s launch week tactic — see Launch Week section above'];
         }
 
-        // Post-launch: pick the right phase chunk based on days elapsed
         if (days < 0 && days > -30) {
           const elapsed = Math.abs(days);
           const phaseIdx = elapsed <= 10 ? 0 : elapsed <= 20 ? 1 : 2;
@@ -1063,7 +1143,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
           <div style={{ minHeight: "100vh", background: "#0D0D0F", padding: "0 16px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
             <div style={{ width: "100%", maxWidth: 680, paddingTop: 32, marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
               <div>
-                <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.3em", marginBottom: 8 }}>PRESSREADY · PRO · LAUNCH DASHBOARD</div>
+                <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.3em", marginBottom: 8 }}>PRESSREADY · LAUNCH DASHBOARD</div>
                 <h1 style={{ fontFamily: "'Lora', serif", fontSize: 28, color: "#fff", fontWeight: 600 }}>{selectedPlan.title}</h1>
                 <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>{selectedPlan.genre} · {selectedPlan.platform}</div>
               </div>
@@ -1103,7 +1183,7 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
         <div style={{ minHeight: "100vh", background: "#0D0D0F", padding: "0 16px 60px", display: "flex", flexDirection: "column", alignItems: "center" }}>
           <div style={{ width: "100%", maxWidth: 680, paddingTop: 32, marginBottom: 32, display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 16 }}>
             <div>
-              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.3em", marginBottom: 8 }}>PRESSREADY · PRO</div>
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.3em", marginBottom: 8 }}>PRESSREADY {proState.tier === 'onetime' ? '· UNLOCKED' : '· PRO'}</div>
               <h1 style={{ fontFamily: "'Lora', serif", fontSize: 32, color: "#fff", fontWeight: 600 }}>Launch Dashboard</h1>
             </div>
             <div style={{ display: "flex", gap: 10 }}>
@@ -1152,25 +1232,144 @@ Every value is a plain string. Use \\n for line breaks and • for bullets. Do N
       );
     }
 
-    // ── App root ──────────────────────────────────────────────────────────────
+    // ── Post-purchase unlock overlay ─────────────────────────────────────────
+    // Shown briefly while we verify the Stripe session_id from the URL.
+    // Three states: 'verifying' (working), 'success' (paid, transitioning), 'failed' (something wrong).
+    function PostPurchaseOverlay({ status, errorMessage, onDismiss }) {
+      const isWorking = status === 'verifying';
+      const isSuccess = status === 'success';
+      const isFailed = status === 'failed';
+
+      return (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(13,13,15,0.95)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: "16px", backdropFilter: "blur(8px)" }}>
+          <div style={{ background: "#141416", border: `1.5px solid ${isFailed ? 'rgba(255,107,107,0.4)' : 'rgba(232,197,71,0.4)'}`, borderRadius: 16, padding: "40px 36px", maxWidth: 440, width: "100%", textAlign: "center", animation: "modalIn 0.3s ease" }}>
+            {isWorking && (
+              <>
+                <div style={{ width: 48, height: 48, borderRadius: "50%", border: "3px solid rgba(232,197,71,0.2)", borderTop: "3px solid #E8C547", margin: "0 auto 24px", animation: "spin 1s linear infinite" }} />
+                <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 14 }}>UNLOCKING YOUR PLAN</div>
+                <h3 style={{ fontFamily: "'Lora', serif", fontSize: 22, color: "#fff", fontWeight: 600, marginBottom: 12, lineHeight: 1.3 }}>Thanks for your purchase.</h3>
+                <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.6)", lineHeight: 1.7 }}>Verifying with Stripe and unlocking your full launch plan — this takes about 5 seconds.</p>
+              </>
+            )}
+            {isSuccess && (
+              <>
+                <div style={{ fontSize: 56, marginBottom: 16 }}>✓</div>
+                <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#E8C547", letterSpacing: "0.2em", marginBottom: 14 }}>UNLOCKED</div>
+                <h3 style={{ fontFamily: "'Lora', serif", fontSize: 22, color: "#fff", fontWeight: 600, marginBottom: 12, lineHeight: 1.3 }}>You're all set.</h3>
+                <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.6)", lineHeight: 1.7 }}>Your full launch plan is unlocked. 90 days of dashboard access starts now.</p>
+              </>
+            )}
+            {isFailed && (
+              <>
+                <div style={{ fontSize: 48, marginBottom: 16, color: '#ff6b6b' }}>!</div>
+                <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 10, color: "#ff6b6b", letterSpacing: "0.2em", marginBottom: 14 }}>VERIFICATION ISSUE</div>
+                <h3 style={{ fontFamily: "'Lora', serif", fontSize: 22, color: "#fff", fontWeight: 600, marginBottom: 12, lineHeight: 1.3 }}>We hit a snag.</h3>
+                <p style={{ fontFamily: "'Lora', serif", fontSize: 14, color: "rgba(255,255,255,0.6)", lineHeight: 1.7, marginBottom: 22 }}>{errorMessage || "We couldn't verify your purchase automatically. If you paid, you can restore access by entering your email."}</p>
+                <button onClick={onDismiss} style={{ padding: "12px 28px", borderRadius: 8, background: "#E8C547", color: "#0D0D0F", border: "none", fontFamily: "'Space Mono', monospace", fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", cursor: "pointer", textTransform: "uppercase" }}>
+                  Continue
+                </button>
+                <div style={{ marginTop: 16, fontFamily: "'Space Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.4)", lineHeight: 1.6 }}>
+                  Support: pressreadyink@proton.me
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     function App() {
       const [view, setView] = useState('landing');
       const [proState, setProState] = useState(() => readProState());
 
-      const handleProVerified = (token, email) => {
-        setProState({ token, email, legacy: false, isPro: true });
+      // Post-purchase verification state
+      // null = no verification in progress (default), 'verifying' / 'success' / 'failed' = active states
+      const [verifyState, setVerifyState] = useState(null);
+      const [verifyError, setVerifyError] = useState(null);
+
+      const handleProVerified = (token, email, tier) => {
+        setProState({ token, email, tier: tier || 'subscription', legacy: false, isPro: true });
       };
 
-      // Called when backend rejects the token (subscription cancelled, expired, tampered)
       const handleProRevoked = () => {
-        setProState({ token: null, email: null, legacy: false, isPro: false });
+        setProState({ token: null, email: null, tier: null, legacy: false, isPro: false });
       };
 
-      return view === 'landing'
-        ? <Landing onStart={() => setView('wizard')} onDashboard={() => setView('dashboard')} proState={proState} />
-        : view === 'dashboard'
-        ? <Dashboard proState={proState} onNewPlan={() => setView('wizard')} onBackToLanding={() => setView('landing')} onProRevoked={handleProRevoked} />
-        : <Wizard onBackToLanding={() => setView('landing')} onDashboard={() => setView('dashboard')} proState={proState} onProVerified={handleProVerified} onProRevoked={handleProRevoked} />;
+      // ── Stripe redirect handler ────────────────────────────────────────────
+      // Runs once on mount. If the URL contains ?session_id=cs_xxx (Stripe's
+      // redirect after a successful one-time purchase), verify with the backend,
+      // store the token, and unlock the user. Then clean the URL so a refresh
+      // doesn't re-trigger verification.
+      useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const sessionId = params.get('session_id');
+
+        if (!sessionId || !sessionId.startsWith('cs_')) {
+          return; // not a post-purchase redirect — nothing to do
+        }
+
+        // Clean the URL immediately so a refresh doesn't retry verification
+        // (the session_id is still in our local variable for the API call)
+        const cleanUrl = window.location.pathname + window.location.hash;
+        window.history.replaceState({}, document.title, cleanUrl);
+
+        setVerifyState('verifying');
+        track('post_purchase_verify_started', { session_id_prefix: sessionId.slice(0, 8) });
+
+        (async () => {
+          try {
+            const res = await fetch('/api/verify-payment', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ session_id: sessionId })
+            });
+            const data = await res.json();
+
+            if (data.paid && data.token) {
+              // Success — store token and unlock
+              writeProToken(data.token, data.email, data.tier || 'onetime');
+              setProState({
+                token: data.token,
+                email: data.email,
+                tier: data.tier || 'onetime',
+                legacy: false,
+                isPro: true
+              });
+              setVerifyState('success');
+              track('post_purchase_verify_success', { tier: data.tier || 'onetime' });
+
+              // Brief celebration moment, then dismiss the overlay
+              setTimeout(() => setVerifyState(null), 2500);
+            } else {
+              // Stripe says not paid, or no token returned
+              setVerifyError(data.error || "We couldn't confirm the payment with Stripe.");
+              setVerifyState('failed');
+              track('post_purchase_verify_failed', { reason: data.error || 'unknown' });
+            }
+          } catch (err) {
+            setVerifyError("Connection error. If you paid, try the 'Already purchased? Restore access' link.");
+            setVerifyState('failed');
+            track('post_purchase_verify_failed', { reason: 'network_error' });
+          }
+        })();
+      }, []); // empty deps — run once on mount only
+
+      return (
+        <>
+          {verifyState && (
+            <PostPurchaseOverlay
+              status={verifyState}
+              errorMessage={verifyError}
+              onDismiss={() => { setVerifyState(null); setVerifyError(null); }}
+            />
+          )}
+          {view === 'landing'
+            ? <Landing onStart={() => setView('wizard')} onDashboard={() => setView('dashboard')} proState={proState} />
+            : view === 'dashboard'
+            ? <Dashboard proState={proState} onNewPlan={() => setView('wizard')} onBackToLanding={() => setView('landing')} onProRevoked={handleProRevoked} />
+            : <Wizard onBackToLanding={() => setView('landing')} onDashboard={() => setView('dashboard')} proState={proState} onProVerified={handleProVerified} onProRevoked={handleProRevoked} />}
+        </>
+      );
     }
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
